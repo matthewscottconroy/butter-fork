@@ -20,3 +20,7 @@ clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bf-common = { workspace = true }
+
+[lib]
+name = "bf_build_cargo"
+path = "src/main.rs"

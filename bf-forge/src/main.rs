@@ -118,7 +118,7 @@ fn delegate(backend: &str, args: &[&str]) -> Result<()> {
     std::process::exit(status.code().unwrap_or(1));
 }
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -174,4 +174,9 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

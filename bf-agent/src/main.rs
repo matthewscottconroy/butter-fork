@@ -389,7 +389,7 @@ fn run_agent_loop(
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_else(|_| {
@@ -492,4 +492,9 @@ mod tests {
         let (_out, is_err) = execute_tool("run_shell", &input, repo, &[]);
         assert!(is_err);
     }
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

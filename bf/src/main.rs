@@ -504,7 +504,7 @@ fn submit(slug: &str) -> Result<()> {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -552,7 +552,72 @@ fn main() -> Result<()> {
         }
 
         BfCommand::Doctor => {
-            eprintln!("bf: checking component health");
+            eprintln!("bf: checking system health");
+            let mut warnings: Vec<String> = Vec::new();
+            let mut errors: Vec<String> = Vec::new();
+
+            // ── external tools ─────────────────────────────────────────────
+            let ext_tools = [
+                ("git",   "version control"),
+                ("gh",    "GitHub CLI (for forge operations)"),
+                ("cargo", "Rust build system"),
+                ("rg",    "ripgrep (faster grep for bf-index)"),
+                ("bwrap", "bubblewrap sandbox"),
+            ];
+            eprintln!("bf: --- external tools ---");
+            for (tool, purpose) in &ext_tools {
+                match Command::new(tool).arg("--version").output() {
+                    Ok(out) if out.status.success() => {
+                        let v = String::from_utf8_lossy(&out.stdout);
+                        eprintln!("  [ok]      {tool}: {}", v.lines().next().unwrap_or("").trim());
+                    }
+                    _ => {
+                        let msg = format!("{tool} not found — {purpose}");
+                        if *tool == "git" || *tool == "cargo" {
+                            errors.push(msg);
+                            eprintln!("  [error]   {tool}: not found (required)");
+                        } else {
+                            warnings.push(msg);
+                            eprintln!("  [warn]    {tool}: not found ({purpose})");
+                        }
+                    }
+                }
+            }
+
+            // ── gh auth ────────────────────────────────────────────────────
+            match Command::new("gh").args(["auth", "status"]).output() {
+                Ok(out) if out.status.success() => {
+                    eprintln!("  [ok]      gh auth: authenticated");
+                }
+                Ok(_) => {
+                    warnings.push("gh is not authenticated — run `gh auth login`".to_owned());
+                    eprintln!("  [warn]    gh auth: not authenticated — run `gh auth login`");
+                }
+                Err(_) => {} // gh already reported missing above
+            }
+
+            // ── API keys ───────────────────────────────────────────────────
+            eprintln!("bf: --- environment ---");
+            if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+                eprintln!("  [ok]      ANTHROPIC_API_KEY: set");
+            } else {
+                warnings.push("ANTHROPIC_API_KEY not set — bf-agent (Claude) will not work".to_owned());
+                eprintln!("  [warn]    ANTHROPIC_API_KEY: not set (required for bf-agent)");
+            }
+
+            let ollama_ok = Command::new("curl")
+                .args(["-sf", "http://localhost:11434/api/version"])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if ollama_ok {
+                eprintln!("  [ok]      Ollama: reachable at localhost:11434");
+            } else {
+                eprintln!("  [info]    Ollama: not reachable (optional, for bf-agent-ollama)");
+            }
+
+            // ── bf components ──────────────────────────────────────────────
+            eprintln!("bf: --- bf components ---");
             let components = [
                 "bf-catalog",
                 "bf-forge",
@@ -564,8 +629,8 @@ fn main() -> Result<()> {
                 "bf-index",
                 "bf-agent",
                 "bf-scaffold",
+                "bf-bootstrap",
             ];
-            let mut all_ok = true;
             for comp in &components {
                 match Command::new(comp).arg("--version").output() {
                     Ok(out) if out.status.success() => {
@@ -573,19 +638,29 @@ fn main() -> Result<()> {
                         eprintln!("  [ok]      {comp}: {}", v.trim());
                     }
                     _ => {
+                        errors.push(format!("{comp}: not found on PATH"));
                         eprintln!("  [missing] {comp}");
-                        all_ok = false;
                     }
                 }
             }
-            if !all_ok {
-                eprintln!("bf: one or more components are missing");
-                eprintln!(
-                    "bf: install with `cargo install --path <crate>` or use the fat binary"
-                );
-                std::process::exit(bf_common::exit::UNAVAILABLE);
+
+            // ── summary ────────────────────────────────────────────────────
+            eprintln!("bf: --- summary ---");
+            for w in &warnings {
+                eprintln!("  [warn]  {w}");
+            }
+            for e in &errors {
+                eprintln!("  [error] {e}");
+            }
+
+            if errors.is_empty() && warnings.is_empty() {
+                eprintln!("bf: all checks passed");
+            } else if errors.is_empty() {
+                eprintln!("bf: {} warning(s), no errors", warnings.len());
             } else {
-                eprintln!("bf: all components OK");
+                eprintln!("bf: {} error(s), {} warning(s)", errors.len(), warnings.len());
+                eprintln!("bf: install missing components with `cargo install --path <crate>` or `scripts/fat-install.sh`");
+                std::process::exit(bf_common::exit::UNAVAILABLE);
             }
         }
 
@@ -675,4 +750,9 @@ mod tests {
             Some("/tmp/bf-artifact-manifest.json".to_owned())
         );
     }
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

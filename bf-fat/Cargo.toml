@@ -1,0 +1,32 @@
+[package]
+name = "bf-fat"
+description = "Butterfork busybox-style fat binary — one binary, all components"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "bf-fat"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+bf = { path = "../bf" }
+bf-agent = { path = "../bf-agent" }
+bf-agent-ollama = { path = "../bf-agent-ollama" }
+bf-bootstrap = { path = "../bf-bootstrap" }
+bf-build = { path = "../bf-build" }
+bf-build-cargo = { path = "../bf-build-cargo" }
+bf-build-cmake = { path = "../bf-build-cmake" }
+bf-build-meson = { path = "../bf-build-meson" }
+bf-build-npm = { path = "../bf-build-npm" }
+bf-catalog = { path = "../bf-catalog" }
+bf-forge = { path = "../bf-forge" }
+bf-forge-github = { path = "../bf-forge-github" }
+bf-forge-gitlab = { path = "../bf-forge-gitlab" }
+bf-index = { path = "../bf-index" }
+bf-install = { path = "../bf-install" }
+bf-sandbox = { path = "../bf-sandbox" }
+bf-scaffold = { path = "../bf-scaffold" }

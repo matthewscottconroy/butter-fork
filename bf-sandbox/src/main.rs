@@ -152,7 +152,7 @@ fn build_bwrap_args(profile: &ProfileConfig, extra_binds: &[String]) -> Vec<Stri
     args
 }
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     eprintln!("bf-sandbox: profile={} command={}", cli.profile, cli.cmd.join(" "));
@@ -188,4 +188,9 @@ fn main() -> Result<()> {
     let refs: Vec<&str> = bwrap_args.iter().map(String::as_str).collect();
     let status = Command::new("bwrap").args(&refs).status()?;
     std::process::exit(status.code().unwrap_or(1));
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

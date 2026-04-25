@@ -158,7 +158,7 @@ fn entry_from_url(url: &str) -> CatalogEntry {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -229,4 +229,9 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

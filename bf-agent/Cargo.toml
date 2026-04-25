@@ -21,3 +21,7 @@ bf-common = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[lib]
+name = "bf_agent"
+path = "src/main.rs"

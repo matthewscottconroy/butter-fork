@@ -396,7 +396,7 @@ fn query_grep(repo: &str, pattern: &str) -> Result<()> {
     std::process::exit(status.code().unwrap_or(1));
 }
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         IndexCommand::Update { repo, no_embeddings } => update(&repo, no_embeddings)?,
@@ -476,4 +476,9 @@ mod tests {
         assert!(!is_source_file("README.md"));
         assert!(!is_source_file("config.toml"));
     }
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

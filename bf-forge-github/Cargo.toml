@@ -16,3 +16,7 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
 bf-common = { workspace = true }
+
+[lib]
+name = "bf_forge_github"
+path = "src/main.rs"

@@ -74,7 +74,7 @@ fn extract_fork_url(ndjson: &str) -> Option<String> {
     })
 }
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
     let prefix = cli
@@ -133,4 +133,9 @@ fn main() -> Result<()> {
     eprintln!("bf-bootstrap: add {prefix}/bin to your PATH if it isn't already");
     eprintln!("bf-bootstrap: run `bf doctor` to verify all components are present");
     Ok(())
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

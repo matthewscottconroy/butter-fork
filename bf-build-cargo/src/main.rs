@@ -147,7 +147,7 @@ pub fn now_ms() -> u64 {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -373,4 +373,9 @@ mod tests {
         let r = git_ref(&workspace);
         assert!(!r.is_empty());
     }
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

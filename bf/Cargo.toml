@@ -17,3 +17,7 @@ clap = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 bf-common = { workspace = true }
+
+[lib]
+name = "bf"
+path = "src/main.rs"

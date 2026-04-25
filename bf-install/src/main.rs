@@ -193,7 +193,7 @@ pub fn activate(project: &str, gen_dir: &Path) -> Result<Vec<String>> {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -486,4 +486,9 @@ mod tests {
         let err = previous_generation("solo");
         assert!(err.is_err());
     }
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }

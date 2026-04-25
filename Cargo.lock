@@ -95,6 +95,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bf-agent-ollama"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bf-common",
+ "clap",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "bf-bootstrap"
 version = "0.1.0"
 dependencies = [
@@ -117,6 +130,42 @@ dependencies = [
 
 [[package]]
 name = "bf-build-cargo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bf-common",
+ "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "bf-build-cmake"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bf-common",
+ "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "bf-build-meson"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bf-common",
+ "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "bf-build-npm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -158,6 +207,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "bf-fat"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bf",
+ "bf-agent",
+ "bf-agent-ollama",
+ "bf-bootstrap",
+ "bf-build",
+ "bf-build-cargo",
+ "bf-build-cmake",
+ "bf-build-meson",
+ "bf-build-npm",
+ "bf-catalog",
+ "bf-forge",
+ "bf-forge-github",
+ "bf-forge-gitlab",
+ "bf-index",
+ "bf-install",
+ "bf-sandbox",
+ "bf-scaffold",
+]
+
+[[package]]
 name = "bf-forge"
 version = "0.1.0"
 dependencies = [
@@ -169,6 +242,16 @@ dependencies = [
 
 [[package]]
 name = "bf-forge-github"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bf-common",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
+name = "bf-forge-gitlab"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -221,6 +304,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
