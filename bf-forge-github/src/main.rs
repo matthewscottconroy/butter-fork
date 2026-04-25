@@ -394,12 +394,43 @@ pub fn run() -> Result<()> {
             }
             PrCommand::Watch { url } => {
                 require_gh()?;
-                eprintln!("bf-forge-github: watching {url} (Phase 1)");
-                // TODO: poll GitHub API and emit Event::Message for each new event.
-                emit(&Event::Message {
-                    text: format!("PR watch not yet implemented: {url}"),
-                });
-                std::process::exit(bf_common::exit::UNAVAILABLE);
+                eprintln!("bf-forge-github: delegating PR watch to bf-daemon");
+                // Prefer the daemon for persistent watching; fall back to in-process poll.
+                let status = std::process::Command::new("bf-daemon")
+                    .args(["watch-pr", &url])
+                    .status();
+                match status {
+                    Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+                    Err(_) => {
+                        // bf-daemon not installed — run a simple blocking poll loop.
+                        eprintln!("bf-forge-github: bf-daemon not found, polling directly");
+                        let mut last_state = String::new();
+                        loop {
+                            let out = std::process::Command::new("gh")
+                                .args(["pr", "view", &url, "--json", "state,title"])
+                                .output();
+                            if let Ok(o) = out {
+                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(
+                                    &String::from_utf8_lossy(&o.stdout),
+                                ) {
+                                    let pr_state = v["state"].as_str().unwrap_or("UNKNOWN").to_owned();
+                                    let title = v["title"].as_str().unwrap_or("").to_owned();
+                                    if pr_state != last_state {
+                                        eprintln!("bf-forge-github: PR '{title}' → {pr_state}");
+                                        emit(&Event::Message {
+                                            text: format!("PR '{title}' state → {pr_state}"),
+                                        });
+                                        last_state = pr_state.clone();
+                                    }
+                                    if matches!(pr_state.as_str(), "MERGED" | "CLOSED") {
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                            std::thread::sleep(std::time::Duration::from_secs(60));
+                        }
+                    }
+                }
             }
         },
     }

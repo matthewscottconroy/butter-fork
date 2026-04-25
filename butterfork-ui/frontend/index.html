@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Butterfork</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --accent: #238636;
+      --accent-hover: #2ea043;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --error: #da3633;
+      --warn: #d29922;
+      --ok: #3fb950;
+      --font: 'Segoe UI', system-ui, sans-serif;
+      --mono: 'Cascadia Code', 'Fira Code', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── sidebar ── */
+    nav {
+      width: 200px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 0;
+      flex-shrink: 0;
+    }
+    .logo {
+      padding: 0 16px 16px;
+      font-weight: 700;
+      font-size: 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--ok);
+    }
+    nav button {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      padding: 10px 16px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: var(--font);
+      border-left: 3px solid transparent;
+    }
+    nav button.active, nav button:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.05);
+      border-left-color: var(--accent);
+    }
+
+    /* ── main area ── */
+    main { flex: 1; overflow-y: auto; padding: 24px; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    h2 { font-size: 18px; margin-bottom: 16px; }
+
+    /* ── search bar ── */
+    .search-row {
+      display: flex; gap: 8px; margin-bottom: 16px;
+    }
+    input[type=text] {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: var(--font);
+      outline: none;
+    }
+    input[type=text]:focus { border-color: var(--accent); }
+    button.btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: var(--font);
+    }
+    button.btn:hover { background: var(--accent-hover); }
+    button.btn.secondary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    button.btn.secondary:hover { background: var(--border); }
+
+    /* ── catalog results ── */
+    .result-list { display: flex; flex-direction: column; gap: 8px; }
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .result-card .info .slug { font-weight: 600; }
+    .result-card .info .desc { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+    .result-card .info .url { color: var(--text-dim); font-size: 11px; font-family: var(--mono); }
+
+    /* ── install log ── */
+    .log-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 12px;
+      height: 360px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: var(--text-dim);
+    }
+    .log-box .ok  { color: var(--ok); }
+    .log-box .err { color: var(--error); }
+    .log-box .warn{ color: var(--warn); }
+
+    /* ── doctor ── */
+    .doctor-output {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+    .check-ok   { color: var(--ok); }
+    .check-warn { color: var(--warn); }
+    .check-err  { color: var(--error); }
+
+    /* ── tasks ── */
+    .task-list { display: flex; flex-direction: column; gap: 8px; }
+    .task-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+    .task-card .task-label { font-weight: 600; }
+    .task-card .task-meta  { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .badge.running { background: #1f6feb33; color: #58a6ff; }
+    .badge.done    { background: #23863633; color: var(--ok); }
+    .badge.failed  { background: #da363333; color: var(--error); }
+
+    .empty { color: var(--text-dim); font-style: italic; margin-top: 8px; }
+  </style>
+</head>
+<body>
+<nav>
+  <div class="logo">🧈 Butterfork</div>
+  <button class="active" onclick="showPanel('catalog')">Catalog</button>
+  <button onclick="showPanel('install')">Install log</button>
+  <button onclick="showPanel('tasks')">Active tasks</button>
+  <button onclick="showPanel('doctor')">Doctor</button>
+</nav>
+
+<main>
+  <!-- ── Catalog panel ─────────────────────────────── -->
+  <div id="panel-catalog" class="panel active">
+    <h2>Catalog</h2>
+    <div class="search-row">
+      <input id="search-input" type="text" placeholder="Search projects…" />
+      <button class="btn" onclick="doSearch()">Search</button>
+    </div>
+    <div id="catalog-results" class="result-list">
+      <p class="empty">Search the catalog above, or type a GitHub URL to install directly.</p>
+    </div>
+  </div>
+
+  <!-- ── Install log panel ────────────────────────── -->
+  <div id="panel-install" class="panel">
+    <h2>Install log</h2>
+    <div id="install-log" class="log-box">No install in progress.</div>
+    <div style="margin-top:8px; display:flex; gap:8px;">
+      <button class="btn secondary" onclick="clearLog()">Clear</button>
+    </div>
+  </div>
+
+  <!-- ── Active tasks panel ───────────────────────── -->
+  <div id="panel-tasks" class="panel">
+    <h2>Active tasks</h2>
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button class="btn secondary" onclick="refreshTasks()">Refresh</button>
+      <button class="btn secondary" onclick="openDaemonLog()">Open daemon log</button>
+    </div>
+    <div id="task-list" class="task-list">
+      <p class="empty">No active tasks.</p>
+    </div>
+  </div>
+
+  <!-- ── Doctor panel ─────────────────────────────── -->
+  <div id="panel-doctor" class="panel">
+    <h2>System health</h2>
+    <button class="btn" onclick="runDoctor()" style="margin-bottom:12px;">Run doctor</button>
+    <div id="doctor-output" class="doctor-output">Press "Run doctor" to check component health.</div>
+  </div>
+</main>
+
+<script>
+const { invoke, event } = window.__TAURI__;
+
+// ── panel switching ────────────────────────────────────────────────────────────
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  const idx = ['catalog','install','tasks','doctor'].indexOf(name);
+  document.querySelectorAll('nav button')[idx + 1].classList.add('active');
+}
+
+// ── catalog ────────────────────────────────────────────────────────────────────
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  const results = document.getElementById('catalog-results');
+  results.innerHTML = '<p class="empty">Searching…</p>';
+  try {
+    const entries = await invoke('catalog_search', { query: q });
+    if (!entries.length) {
+      results.innerHTML = '<p class="empty">No results.</p>';
+      return;
+    }
+    results.innerHTML = entries.map(e => `
+      <div class="result-card">
+        <div class="info">
+          <div class="slug">${e.slug}</div>
+          ${e.description ? `<div class="desc">${e.description}</div>` : ''}
+          <div class="url">${e.upstream_url}</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" onclick="startInstall('${e.slug}',false)">Install</button>
+          <button class="btn secondary" onclick="startInstall('${e.slug}',true)">Install (no fork)</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(err) {
+    results.innerHTML = `<p class="empty" style="color:var(--error)">${err}</p>`;
+  }
+}
+
+document.getElementById('search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+
+// ── install ────────────────────────────────────────────────────────────────────
+const logBox = document.getElementById('install-log');
+
+function appendLog(line) {
+  let cls = '';
+  if (line.includes('[ok]')) cls = 'ok';
+  else if (line.includes('[error]') || line.includes('error')) cls = 'err';
+  else if (line.includes('[warn]') || line.includes('warning')) cls = 'warn';
+  const span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = line + '\n';
+  logBox.appendChild(span);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function clearLog() { logBox.innerHTML = ''; }
+
+async function startInstall(slug, noFork) {
+  showPanel('install');
+  logBox.innerHTML = '';
+  appendLog(`Starting install: ${slug}${noFork ? ' (no fork)' : ''}`);
+  await invoke('install_project', { slug, noFork });
+}
+
+event.listen('install-progress', e => appendLog(e.payload));
+event.listen('install-done', e => {
+  const ok = e.payload === 'ok';
+  appendLog(ok ? '[ok] Install complete.' : '[error] Install failed.');
+});
+
+// ── tasks ──────────────────────────────────────────────────────────────────────
+async function refreshTasks() {
+  const list = document.getElementById('task-list');
+  try {
+    const tasks = await invoke('daemon_status');
+    if (!tasks.length) {
+      list.innerHTML = '<p class="empty">No active tasks (daemon may not be running).</p>';
+      return;
+    }
+    list.innerHTML = tasks.map(t => `
+      <div class="task-card">
+        <div class="task-label">${t.label}<span class="badge ${t.status}">${t.status}</span></div>
+        <div class="task-meta">${t.kind} · started ${new Date(t.started_at * 1000).toLocaleTimeString()} · id: ${t.id}</div>
+      </div>
+    `).join('');
+  } catch(err) {
+    list.innerHTML = `<p class="empty" style="color:var(--error)">${err}</p>`;
+  }
+}
+
+async function openDaemonLog() {
+  await invoke('open_daemon_log');
+}
+
+// ── doctor ─────────────────────────────────────────────────────────────────────
+async function runDoctor() {
+  const out = document.getElementById('doctor-output');
+  out.textContent = 'Running…';
+  try {
+    const result = await invoke('run_doctor');
+    out.innerHTML = result.output
+      .split('\n')
+      .map(line => {
+        let cls = '';
+        if (line.includes('[ok]')) cls = 'check-ok';
+        else if (line.includes('[error]') || line.includes('[missing]')) cls = 'check-err';
+        else if (line.includes('[warn]')) cls = 'check-warn';
+        return cls ? `<span class="${cls}">${escHtml(line)}</span>` : escHtml(line);
+      })
+      .join('\n');
+  } catch(err) {
+    out.textContent = String(err);
+  }
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
