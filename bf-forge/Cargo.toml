@@ -1,0 +1,18 @@
+[package]
+name = "bf-forge"
+description = "Forge operations: fork, clone, open issues and PRs across hosting backends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "bf-forge"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+bf-common = { workspace = true }

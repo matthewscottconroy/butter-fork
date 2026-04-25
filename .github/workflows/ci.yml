@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Rust build, lint, and unit tests ────────────────────────────────────────
+  build:
+    name: build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: fmt check
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: build
+        run: cargo build --all
+
+      - name: unit tests
+        run: cargo test --all --lib
+
+  # ── Integration tests (build adapter + install manager) ─────────────────────
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build all binaries
+        run: cargo build --all
+
+      # bf-build-cargo integration tests build real toy Cargo crates.
+      - name: bf-build-cargo integration tests
+        run: cargo test --test build_integration -p bf-build-cargo
+
+      # bf-install integration tests exercise the full add/activate/rollback/gc loop.
+      - name: bf-install integration tests
+        run: cargo test --test install_integration -p bf-install
+
+  # ── Script quality checks ────────────────────────────────────────────────────
+  scripts:
+    name: scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: scripts are executable
+        run: |
+          test -x scripts/install.sh   || (echo "scripts/install.sh is not executable" && exit 1)
+          test -x scripts/rollback.sh  || (echo "scripts/rollback.sh is not executable" && exit 1)
+
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck scripts/install.sh scripts/rollback.sh
+
+  # ── Pipeline parity smoke test (Phase 0) ────────────────────────────────────
+  # Verifies that `bf install` and scripts/install.sh exercise the same component
+  # binaries in the same order on a local toy crate (no GitHub credentials needed).
+  #
+  # Both are run with BF_NO_FORK=1 against a local Cargo project so the test is
+  # hermetic. They must produce the same directory structure under BF_HOME.
+  parity:
+    name: bf/script pipeline parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build all binaries
+        run: cargo build --all
+
+      - name: add binaries to PATH
+        run: echo "${{ github.workspace }}/target/debug" >> "$GITHUB_PATH"
+
+      - name: create toy crate for parity test
+        run: |
+          mkdir -p /tmp/paritycrate/src
+          cat > /tmp/paritycrate/Cargo.toml <<'EOF'
+          [package]
+          name = "paritycrate"
+          version = "0.1.0"
+          edition = "2021"
+          [[bin]]
+          name = "paritycrate"
+          path = "src/main.rs"
+          EOF
+          echo 'fn main() { println!("parity!"); }' > /tmp/paritycrate/src/main.rs
+
+      # Run the shell script pipeline.
+      - name: script pipeline
+        run: |
+          BF_HOME=/tmp/bf-home-script \
+          BF_NO_FORK=1 \
+          bash scripts/install.sh /tmp/paritycrate
+
+      # Run the bf binary pipeline.
+      - name: bf install pipeline
+        run: |
+          BF_HOME=/tmp/bf-home-bf \
+          BF_NO_FORK=1 \
+          bf install /tmp/paritycrate --no-fork
+
+      # Both should produce the same layout under their respective BF_HOME dirs.
+      - name: compare directory structures
+        run: |
+          SCRIPT_TREE="$(find /tmp/bf-home-script/generations -type f -name '*.json' | sort | xargs -I{} jq -r '.project + "/" + .id' {} 2>/dev/null || true)"
+          BF_TREE="$(find /tmp/bf-home-bf/generations -type f -name '*.json' | sort | xargs -I{} jq -r '.project + "/" + .id' {} 2>/dev/null || true)"
+          echo "script generations: $SCRIPT_TREE"
+          echo "bf generations:     $BF_TREE"
+          # Both should have exactly one generation for 'paritycrate'.
+          SCRIPT_COUNT="$(find /tmp/bf-home-script/generations/paritycrate -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          BF_COUNT="$(find /tmp/bf-home-bf/generations/paritycrate -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          echo "script generation count: $SCRIPT_COUNT"
+          echo "bf generation count:     $BF_COUNT"
+          test "$SCRIPT_COUNT" -eq 1
+          test "$BF_COUNT" -eq 1
+          # Both should have a bin/paritycrate symlink.
+          test -e /tmp/bf-home-script/bin/paritycrate
+          test -e /tmp/bf-home-bf/bin/paritycrate
+          echo "parity check passed"

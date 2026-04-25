@@ -1,0 +1,18 @@
+[package]
+name = "bf"
+description = "Butterfork orchestrator — fork, build, install, and improve open source software"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "bf"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+bf-common = { workspace = true }

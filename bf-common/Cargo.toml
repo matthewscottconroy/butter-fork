@@ -1,0 +1,13 @@
+[package]
+name = "bf-common"
+description = "Shared types, NDJSON event protocol, and exit codes for Butterfork components"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
