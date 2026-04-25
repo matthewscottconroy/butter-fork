@@ -249,7 +249,9 @@ dependencies = [
  "anyhow",
  "bf-common",
  "clap",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

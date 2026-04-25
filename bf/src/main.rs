@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
-use bf_common::{emit, exit, Event};
+use bf_common::{emit, exit, Event, TelemetryEvent, TelemetryRecord};
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 use std::process::Command;
 
 #[derive(Parser)]
@@ -59,12 +60,100 @@ enum BfCommand {
     },
     /// Discover bf-* components on PATH and print their --help
     HelpAll,
+    /// Manage opt-in local telemetry (never transmitted automatically)
+    Telemetry {
+        #[command(subcommand)]
+        cmd: TelemetryCommand,
+    },
+    /// Run an integration self-test of the installed bf-* components
+    SelfTest {
+        /// Run against a specific local repo path instead of the workspace default
+        #[arg(long)]
+        repo: Option<String>,
+        /// Skip sandbox test (useful in CI without bubblewrap/podman)
+        #[arg(long)]
+        no_sandbox: bool,
+    },
 }
 
 #[derive(Subcommand)]
 enum RescueCommand {
     List { slug: String },
     Activate { slug: String, generation_id: String },
+}
+
+#[derive(Subcommand)]
+enum TelemetryCommand {
+    /// Show whether telemetry is enabled and how many records are stored
+    Status,
+    /// Enable local telemetry recording
+    Enable,
+    /// Disable local telemetry recording and stop new records being written
+    Disable,
+    /// Print all stored telemetry records as NDJSON
+    Show,
+    /// Delete all stored telemetry records
+    Clear,
+}
+
+// ── telemetry helpers ─────────────────────────────────────────────────────────
+
+fn telemetry_opt_in_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let bf_home = std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
+    PathBuf::from(format!("{bf_home}/telemetry-enabled"))
+}
+
+fn telemetry_log_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let bf_home = std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
+    PathBuf::from(format!("{bf_home}/telemetry.jsonl"))
+}
+
+fn telemetry_enabled() -> bool {
+    // Also honour BF_TELEMETRY=1 env var.
+    if std::env::var("BF_TELEMETRY").as_deref() == Ok("1") {
+        return true;
+    }
+    telemetry_opt_in_path().exists()
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+pub fn record_telemetry(event: TelemetryEvent) {
+    if !telemetry_enabled() {
+        return;
+    }
+    let record = TelemetryRecord { timestamp: now_secs(), event };
+    let Ok(line) = serde_json::to_string(&record) else { return };
+    let path = telemetry_log_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
+// ── self-test helpers ─────────────────────────────────────────────────────────
+
+struct SelfTestResult {
+    name: &'static str,
+    passed: bool,
+    note: String,
+}
+
+fn self_test_check(results: &mut Vec<SelfTestResult>, name: &'static str, passed: bool, note: impl Into<String>) {
+    let note = note.into();
+    let icon = if passed { "[ok]  " } else { "[FAIL]" };
+    eprintln!("bf self-test: {icon} {name}{}", if note.is_empty() { String::new() } else { format!(" — {note}") });
+    results.push(SelfTestResult { name, passed, note });
 }
 
 // ── low-level process helpers ─────────────────────────────────────────────────
@@ -203,14 +292,31 @@ fn install(slug: &str, dest_override: Option<String>, no_fork: bool, release: bo
 
     // ── step 5: install generation ────────────────────────────────────────────
     eprintln!("bf: step 5/5 — installing generation");
+    let t0 = now_secs();
     let add_status = spawn_inherit("bf-install", &["add", &project_slug, &manifest_path])?;
     if !add_status.success() {
+        record_telemetry(TelemetryEvent::Install {
+            slug: project_slug.clone(),
+            success: false,
+            duration_secs: now_secs() - t0,
+        });
         anyhow::bail!("bf-install add failed");
     }
     let act_status = spawn_inherit("bf-install", &["activate", &project_slug, "latest"])?;
     if !act_status.success() {
+        record_telemetry(TelemetryEvent::Install {
+            slug: project_slug.clone(),
+            success: false,
+            duration_secs: now_secs() - t0,
+        });
         anyhow::bail!("bf-install activate failed");
     }
+
+    record_telemetry(TelemetryEvent::Install {
+        slug: project_slug.clone(),
+        success: true,
+        duration_secs: now_secs() - t0,
+    });
 
     eprintln!("bf: '{project_slug}' installed — binaries under {bf_home}/bin/");
     eprintln!("bf: add {bf_home}/bin to your PATH if not already there");
@@ -699,6 +805,185 @@ pub fn run() -> Result<()> {
                         let _ = Command::new(entry.path()).arg("--help").status();
                     }
                 }
+            }
+        }
+
+        BfCommand::Telemetry { cmd } => {
+            let opt_in = telemetry_opt_in_path();
+            let log = telemetry_log_path();
+            match cmd {
+                TelemetryCommand::Status => {
+                    let enabled = telemetry_enabled();
+                    let count = if log.exists() {
+                        std::fs::read_to_string(&log)
+                            .unwrap_or_default()
+                            .lines()
+                            .count()
+                    } else {
+                        0
+                    };
+                    eprintln!("bf telemetry: enabled={enabled}");
+                    eprintln!("bf telemetry: {count} record(s) stored at {}", log.display());
+                    eprintln!("bf telemetry: records are local-only and never transmitted automatically");
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "enabled": enabled,
+                            "record_count": count,
+                            "log_path": log.display().to_string(),
+                        })
+                    );
+                }
+                TelemetryCommand::Enable => {
+                    if let Some(parent) = opt_in.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&opt_in, "")?;
+                    eprintln!("bf telemetry: enabled — events will be recorded to {}", log.display());
+                    eprintln!("bf telemetry: disable at any time with `bf telemetry disable`");
+                }
+                TelemetryCommand::Disable => {
+                    let _ = std::fs::remove_file(&opt_in);
+                    eprintln!("bf telemetry: disabled — no new events will be recorded");
+                    eprintln!("bf telemetry: existing records remain at {} (clear with `bf telemetry clear`)", log.display());
+                }
+                TelemetryCommand::Show => {
+                    if !log.exists() {
+                        eprintln!("bf telemetry: no records found");
+                    } else {
+                        print!("{}", std::fs::read_to_string(&log)?);
+                    }
+                }
+                TelemetryCommand::Clear => {
+                    if log.exists() {
+                        std::fs::remove_file(&log)?;
+                        eprintln!("bf telemetry: all records deleted");
+                    } else {
+                        eprintln!("bf telemetry: no records to delete");
+                    }
+                }
+            }
+        }
+
+        BfCommand::SelfTest { repo, no_sandbox } => {
+            eprintln!("bf self-test: running integration checks");
+            let mut results: Vec<SelfTestResult> = Vec::new();
+
+            // Resolve test repo — default to the current working directory.
+            let test_repo = repo
+                .as_deref()
+                .map(str::to_owned)
+                .unwrap_or_else(|| ".".to_owned());
+            let abs_repo = std::fs::canonicalize(&test_repo)
+                .unwrap_or_else(|_| std::path::PathBuf::from(&test_repo))
+                .to_string_lossy()
+                .to_string();
+
+            eprintln!("bf self-test: test repo = {abs_repo}");
+            eprintln!("bf self-test: ---");
+
+            // ── 1. bf-build detect ──────────────────────────────────────────
+            let detect_out = Command::new("bf-build")
+                .args(["detect", &abs_repo])
+                .output();
+            match &detect_out {
+                Ok(o) if o.status.success() => {
+                    let stdout = String::from_utf8_lossy(&o.stdout);
+                    let adapter = serde_json::from_str::<serde_json::Value>(
+                        stdout.lines().next().unwrap_or("{}"),
+                    )
+                    .ok()
+                    .and_then(|v| v["adapter"].as_str().map(str::to_owned))
+                    .unwrap_or_else(|| "unknown".to_owned());
+                    self_test_check(&mut results, "bf-build detect", true, format!("adapter={adapter}"));
+                }
+                Ok(o) => self_test_check(
+                    &mut results, "bf-build detect", false,
+                    format!("exit {}", o.status.code().unwrap_or(1)),
+                ),
+                Err(e) => self_test_check(&mut results, "bf-build detect", false, e.to_string()),
+            }
+
+            // ── 2. bf-build plan ────────────────────────────────────────────
+            let plan_out = Command::new("bf-build")
+                .args(["plan", &abs_repo])
+                .output();
+            self_test_check(
+                &mut results, "bf-build plan",
+                plan_out.as_ref().map(|o| o.status.success()).unwrap_or(false),
+                plan_out.err().map(|e| e.to_string()).unwrap_or_default(),
+            );
+
+            // ── 3. bf-index update (temp dir) ───────────────────────────────
+            let tmpdir = tempfile::tempdir();
+            match &tmpdir {
+                Ok(d) => {
+                    // Write a minimal Rust file to index.
+                    let _ = std::fs::write(d.path().join("main.rs"), "pub fn hello() {}");
+                    let idx_out = Command::new("bf-index")
+                        .args(["update", &d.path().to_string_lossy()])
+                        .output();
+                    self_test_check(
+                        &mut results, "bf-index update",
+                        idx_out.as_ref().map(|o| o.status.success()).unwrap_or(false),
+                        idx_out.err().map(|e| e.to_string()).unwrap_or_default(),
+                    );
+                }
+                Err(e) => {
+                    self_test_check(&mut results, "bf-index update", false, e.to_string());
+                }
+            }
+
+            // ── 4. bf-sandbox (echo test) ────────────────────────────────────
+            if !no_sandbox {
+                let sbox_out = Command::new("bf-sandbox")
+                    .args(["--profile", "run", "--", "echo", "bf-sandbox-ok"])
+                    .output();
+                let passed = sbox_out
+                    .as_ref()
+                    .map(|o| {
+                        o.status.success()
+                            && String::from_utf8_lossy(&o.stdout).contains("bf-sandbox-ok")
+                    })
+                    .unwrap_or(false);
+                self_test_check(
+                    &mut results, "bf-sandbox run",
+                    passed,
+                    if passed { "echo test passed".to_owned() } else { "sandbox echo test failed (try --no-sandbox in CI)".to_owned() },
+                );
+            }
+
+            // ── 5. bf-catalog search ─────────────────────────────────────────
+            let cat_out = Command::new("bf-catalog")
+                .args(["search", "ripgrep"])
+                .output();
+            self_test_check(
+                &mut results, "bf-catalog search",
+                cat_out.as_ref().map(|o| o.status.success()).unwrap_or(false),
+                cat_out.err().map(|e| e.to_string()).unwrap_or_default(),
+            );
+
+            // ── summary ──────────────────────────────────────────────────────
+            eprintln!("bf self-test: ---");
+            let passed = results.iter().filter(|r| r.passed).count();
+            let total = results.len();
+            let all_passed = passed == total;
+            eprintln!("bf self-test: {passed}/{total} checks passed");
+
+            let summary = serde_json::json!({
+                "passed": passed,
+                "total": total,
+                "all_passed": all_passed,
+                "checks": results.iter().map(|r| serde_json::json!({
+                    "name": r.name,
+                    "passed": r.passed,
+                    "note": r.note,
+                })).collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+
+            if !all_passed {
+                std::process::exit(exit::SOFTWARE);
             }
         }
     }

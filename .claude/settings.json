@@ -4,7 +4,8 @@
       "Bash(chmod +x /home/matthewscott/Development/butter-fork/scripts/fat-install.sh)",
       "Bash(main)",
       "Bash(grep -E \"^error|warning: unused|warning: function `main`\")",
-      "Bash(grep -E \"^test |^error|FAILED|ok$|running [0-9]\")"
+      "Bash(grep -E \"^test |^error|FAILED|ok$|running [0-9]\")",
+      "Bash(chmod +x /home/matthewscott/Development/butter-fork/scripts/setup-path.sh)"
     ]
   }
 }

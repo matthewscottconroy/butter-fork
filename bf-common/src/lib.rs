@@ -81,6 +81,86 @@ pub struct CatalogEntry {
     pub has_code_of_conduct: bool,
     /// Median days from PR open to first maintainer response, if known.
     pub pr_response_latency_days: Option<f64>,
+    /// 0.0–1.0 composite contribution-friendliness score (Phase 4+).
+    #[serde(default)]
+    pub contribution_score: Option<f64>,
+    /// SPDX expression detected at fork time (e.g. "MIT", "GPL-3.0-only").
+    #[serde(default)]
+    pub spdx_id: Option<String>,
+    /// Whether the license is copyleft (GPL/LGPL/AGPL family).
+    #[serde(default)]
+    pub is_copyleft: bool,
+}
+
+/// Per-project PR policy loaded from `~/.butterfork/pr-policy/<slug>.toml`.
+///
+/// Controls which pre-flight checks run before opening a PR and how the
+/// AI-assistance footer is handled.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PolicyConfig {
+    /// Require DCO Signed-off-by on every commit (default: true).
+    pub require_dco: bool,
+    /// Require `cargo test` (or equivalent) to pass (default: true).
+    pub require_tests: bool,
+    /// Run a format check (`cargo fmt --check`) before opening a PR (default: false).
+    pub require_format_check: bool,
+    /// How to handle the AI-assistance footer in the PR body.
+    pub ai_footer: AiFooterPolicy,
+    /// Warn when the diff exceeds this many total line/file changes (default: 1000).
+    pub max_diff_lines: u64,
+    /// Block PRs that add undeclared new dependencies (default: false).
+    pub block_new_dependencies: bool,
+    /// Warn when > 80 % of the diff is whitespace changes (default: true).
+    pub warn_whitespace_churn: bool,
+}
+
+impl Default for PolicyConfig {
+    fn default() -> Self {
+        Self {
+            require_dco: true,
+            require_tests: true,
+            require_format_check: false,
+            ai_footer: AiFooterPolicy::Include,
+            max_diff_lines: 1000,
+            block_new_dependencies: false,
+            warn_whitespace_churn: true,
+        }
+    }
+}
+
+/// How the AI-assistance footer is included in PR bodies.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AiFooterPolicy {
+    /// Always include the footer (default).
+    #[default]
+    Include,
+    /// Never include the footer (user has verified the project prohibits it).
+    Exclude,
+    /// Prompt the user interactively (not yet implemented, falls back to Include).
+    Ask,
+}
+
+/// A single telemetry event recorded to `~/.butterfork/telemetry.jsonl`.
+///
+/// All fields are local-only. Nothing is transmitted automatically.
+/// Users opt in with `bf telemetry enable` and export with `bf telemetry show`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelemetryRecord {
+    /// Unix timestamp of the event.
+    pub timestamp: u64,
+    pub event: TelemetryEvent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TelemetryEvent {
+    Install { slug: String, success: bool, duration_secs: u64 },
+    Build { slug: String, adapter: String, success: bool, duration_secs: u64 },
+    AgentRun { slug: String, success: bool, iterations: u32 },
+    PrOpened { slug: String },
+    PrMerged { slug: String },
 }
 
 /// Result of `bf-build detect`: which adapter should build this repo.
