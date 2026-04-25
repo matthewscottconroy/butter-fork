@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bf_common::{emit, Event};
+use bf_common::{emit, exit, Event};
 use clap::{Parser, Subcommand};
 use std::process::Command;
 
@@ -236,6 +236,272 @@ fn slug_from_url(url: &str) -> String {
         .to_owned()
 }
 
+/// Extract `owner/repo` from a GitHub HTTPS URL.
+fn github_slug_from_url(url: &str) -> Option<String> {
+    let stripped = url.trim_end_matches('/').trim_end_matches(".git");
+    stripped
+        .split_once("github.com/")
+        .map(|(_, slug)| slug.to_owned())
+}
+
+// ── request pipeline ──────────────────────────────────────────────────────────
+
+/// Tool manifest passed to bf-agent for change requests.
+fn generate_tool_manifest() -> serde_json::Value {
+    serde_json::json!({
+        "tools": [
+            {
+                "name": "read_file",
+                "description": "Read the contents of a file in the repository.",
+                "command": ["__builtin__"],
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path relative to repo root"}
+                    },
+                    "required": ["path"]
+                }
+            },
+            {
+                "name": "write_file",
+                "description": "Write (or overwrite) a file in the repository.",
+                "command": ["__builtin__"],
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"}
+                    },
+                    "required": ["path", "content"]
+                }
+            },
+            {
+                "name": "list_files",
+                "description": "List files and directories at a path in the repository.",
+                "command": ["__builtin__"],
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path relative to repo root (default: .)"}
+                    }
+                }
+            },
+            {
+                "name": "run_shell",
+                "description": "Run a shell command in the repository directory (e.g. cargo test, cargo fmt).",
+                "command": ["__builtin__"],
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"},
+                        "args": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["command"]
+                }
+            },
+            {
+                "name": "git_diff",
+                "description": "Show uncommitted or staged changes.",
+                "command": ["__builtin__"],
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "staged": {"type": "boolean", "description": "Show staged changes (default false)"}
+                    }
+                }
+            },
+            {
+                "name": "git_add",
+                "description": "Stage files for the next commit.",
+                "command": ["__builtin__"],
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "paths": {"type": "array", "items": {"type": "string"}, "description": "Paths to stage (default: [\".\"])"}
+                    }
+                }
+            },
+            {
+                "name": "git_commit",
+                "description": "Create a git commit with staged changes. A DCO Signed-off-by is added automatically.",
+                "command": ["__builtin__"],
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string"}
+                    },
+                    "required": ["message"]
+                }
+            }
+        ]
+    })
+}
+
+fn request(slug: &str, description: &str) -> Result<()> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let bf_home =
+        std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
+    let repo_path = format!("{bf_home}/repos/{slug}");
+
+    if !std::path::Path::new(&repo_path).exists() {
+        eprintln!("bf: project '{slug}' not found at {repo_path}");
+        eprintln!("bf: run `bf install {slug}` first");
+        std::process::exit(exit::NOINPUT);
+    }
+
+    // Derive a URL-safe branch slug from the description.
+    let branch_slug: String = description
+        .to_lowercase()
+        .split_whitespace()
+        .take(5)
+        .collect::<Vec<_>>()
+        .join("-")
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-')
+        .collect();
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let branch = format!("bf/{branch_slug}-{ts}");
+
+    eprintln!("bf: creating branch {branch}");
+    let br_status = Command::new("git")
+        .args(["checkout", "-b", &branch])
+        .current_dir(&repo_path)
+        .status()
+        .context("git checkout -b")?;
+    if !br_status.success() {
+        anyhow::bail!("failed to create branch {branch}");
+    }
+    emit(&Event::BranchCreated {
+        branch: branch.clone(),
+    });
+
+    // Write the tool manifest to a temp file.
+    let manifest = generate_tool_manifest();
+    let tmp = tempfile::NamedTempFile::new().context("creating temp manifest file")?;
+    serde_json::to_writer_pretty(tmp.as_file(), &manifest)
+        .context("writing tool manifest")?;
+    let manifest_path = tmp.path().to_string_lossy().to_string();
+
+    eprintln!("bf: invoking agent — prompt: {description}");
+    let agent_status = spawn_inherit(
+        "bf-agent",
+        &[
+            "--repo",
+            &repo_path,
+            "--prompt",
+            description,
+            "--tools",
+            &manifest_path,
+        ],
+    )?;
+
+    if !agent_status.success() {
+        anyhow::bail!("bf-agent exited with {agent_status}");
+    }
+
+    eprintln!("bf: agent done — review changes with `git log -1` in {repo_path}");
+    eprintln!("bf: run `bf submit {slug}` when ready to open a PR");
+    Ok(())
+}
+
+// ── submit pipeline ───────────────────────────────────────────────────────────
+
+fn submit(slug: &str) -> Result<()> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let bf_home =
+        std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
+    let repo_path = format!("{bf_home}/repos/{slug}");
+
+    if !std::path::Path::new(&repo_path).exists() {
+        eprintln!("bf: project '{slug}' not found at {repo_path}");
+        std::process::exit(exit::NOINPUT);
+    }
+
+    // Determine current branch.
+    let br_out = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&repo_path)
+        .output()
+        .context("git rev-parse")?;
+    let branch = String::from_utf8_lossy(&br_out.stdout).trim().to_owned();
+    if branch == "main" || branch == "master" {
+        anyhow::bail!(
+            "refusing to submit: on '{branch}'. \
+             Switch to a feature branch (`bf request` creates one automatically)."
+        );
+    }
+
+    // Get origin (fork) URL.
+    let origin_out = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(&repo_path)
+        .output()
+        .context("git remote get-url origin")?;
+    let fork_url = String::from_utf8_lossy(&origin_out.stdout)
+        .trim()
+        .to_owned();
+
+    // Determine upstream repo slug (prefer `upstream` remote, fall back to origin).
+    let upstream_out = Command::new("git")
+        .args(["remote", "get-url", "upstream"])
+        .current_dir(&repo_path)
+        .output();
+    let upstream_url = upstream_out
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .unwrap_or_else(|| fork_url.clone());
+
+    let pr_repo = github_slug_from_url(&upstream_url)
+        .or_else(|| github_slug_from_url(&fork_url))
+        .unwrap_or_else(|| upstream_url.clone());
+
+    // Push the branch.
+    eprintln!("bf: pushing {branch} → origin");
+    let push_status = Command::new("git")
+        .args(["push", "-u", "origin", &branch])
+        .current_dir(&repo_path)
+        .status()
+        .context("git push")?;
+    if !push_status.success() {
+        anyhow::bail!("git push failed");
+    }
+
+    // Build PR title and body from the last commit message.
+    let log_out = Command::new("git")
+        .args(["log", "-1", "--pretty=%s%n%n%b"])
+        .current_dir(&repo_path)
+        .output()?;
+    let commit_msg = String::from_utf8_lossy(&log_out.stdout).to_string();
+    let pr_title = commit_msg
+        .lines()
+        .next()
+        .unwrap_or(&branch)
+        .to_owned();
+    let pr_body = format!(
+        "{commit_msg}\n---\n\
+         *Drafted with [Butterfork](https://github.com/matthewscottconroy/butter-fork) \
+         and AI assistance.*"
+    );
+
+    eprintln!("bf: opening PR — {branch} → main on {pr_repo}");
+    let pr_status = spawn_inherit(
+        "bf-forge",
+        &[
+            "pr", "open",
+            "--repo", &pr_repo,
+            "--head", &branch,
+            "--base", "main",
+            "--title", &pr_title,
+            "--body", &pr_body,
+        ],
+    )?;
+    std::process::exit(pr_status.code().unwrap_or(1));
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -252,14 +518,11 @@ fn main() -> Result<()> {
         }
 
         BfCommand::Request { slug, description } => {
-            eprintln!("bf: request for '{slug}': {description}");
-            eprintln!("bf: agent loop not yet implemented (Phase 1)");
-            std::process::exit(bf_common::exit::UNAVAILABLE);
+            request(&slug, &description)?;
         }
 
         BfCommand::Submit { slug } => {
-            eprintln!("bf: PR submission for '{slug}' not yet implemented (Phase 1)");
-            std::process::exit(bf_common::exit::UNAVAILABLE);
+            submit(&slug)?;
         }
 
         BfCommand::New {

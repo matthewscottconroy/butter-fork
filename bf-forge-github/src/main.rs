@@ -142,11 +142,130 @@ fn gh_status(args: &[&str]) -> Result<std::process::ExitStatus> {
 
 // ── pre-flight gate ───────────────────────────────────────────────────────────
 
-fn preflight_pr(repo: &str, head: &str) -> Result<()> {
-    eprintln!("bf-forge-github: pre-flight checks for {repo}@{head}");
-    // TODO (Phase 1): run full gate — tests, lint, fmt, CONTRIBUTING.md,
-    // CLA/DCO detection, anti-spam heuristics (giant diff, whitespace churn).
-    eprintln!("bf-forge-github: [stub] pre-flight not yet implemented");
+/// Attempt to find the local checkout for a repo slug under BF_HOME.
+fn find_local_checkout(repo_slug: &str) -> Option<String> {
+    let home = std::env::var("HOME").ok()?;
+    let bf_home =
+        std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
+    let name = repo_slug.rsplit('/').next()?;
+    let path = format!("{bf_home}/repos/{name}");
+    std::path::Path::new(&path).exists().then_some(path)
+}
+
+fn preflight_pr(repo_slug: &str, head: &str) -> Result<()> {
+    eprintln!("bf-forge-github: pre-flight checks for {repo_slug}@{head}");
+    let local = find_local_checkout(repo_slug);
+    let mut warnings: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    // ── 1. CONTRIBUTING.md in target repo ────────────────────────────────────
+    let api_path = format!("repos/{repo_slug}/contents/CONTRIBUTING.md");
+    match Command::new("gh")
+        .args(["api", &api_path])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            eprintln!("bf-forge-github: [ok] CONTRIBUTING.md found — surface it to the user");
+        }
+        _ => {
+            warnings.push(
+                "No CONTRIBUTING.md found in target repo — \
+                 review contribution guidelines on the project website"
+                    .to_owned(),
+            );
+        }
+    }
+
+    // ── 2. DCO: Signed-off-by in every commit on this branch ─────────────────
+    if let Some(ref local_path) = local {
+        let log = Command::new("git")
+            .args(["log", "origin/main..HEAD", "--format=%B---COMMIT---"])
+            .current_dir(local_path)
+            .output();
+        if let Ok(out) = log {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let missing = text
+                .split("---COMMIT---")
+                .filter(|msg| {
+                    let m = msg.trim();
+                    !m.is_empty() && !m.contains("Signed-off-by:")
+                })
+                .count();
+            if missing > 0 {
+                warnings.push(format!(
+                    "{missing} commit(s) missing DCO Signed-off-by — \
+                     amend with `git commit -s --amend` (or re-run with `git commit -s`)"
+                ));
+            } else {
+                eprintln!("bf-forge-github: [ok] all commits have DCO Signed-off-by");
+            }
+        }
+    }
+
+    // ── 3. Diff size heuristic ────────────────────────────────────────────────
+    if let Some(ref local_path) = local {
+        let stat = Command::new("git")
+            .args(["diff", "origin/main..HEAD", "--shortstat"])
+            .current_dir(local_path)
+            .output();
+        if let Ok(out) = stat {
+            let line = String::from_utf8_lossy(&out.stdout);
+            // Parse the largest number from e.g. "3 files changed, 42 insertions(+), 5 deletions(-)"
+            let total: u64 = line
+                .split_whitespace()
+                .filter_map(|w| w.parse::<u64>().ok())
+                .sum();
+            if total > 1000 {
+                warnings.push(format!(
+                    "Large diff (~{total} lines/files changed) — \
+                     consider splitting into smaller PRs"
+                ));
+            } else {
+                eprintln!("bf-forge-github: [ok] diff size within normal range");
+            }
+        }
+    }
+
+    // ── 4. Run build-system tests ─────────────────────────────────────────────
+    if let Some(ref local_path) = local {
+        let has_cargo = std::path::Path::new(local_path).join("Cargo.toml").exists();
+        if has_cargo {
+            eprintln!("bf-forge-github: running `cargo test` (this may take a moment)");
+            let test = Command::new("cargo")
+                .args(["test", "--quiet"])
+                .current_dir(local_path)
+                .status();
+            match test {
+                Ok(s) if s.success() => {
+                    eprintln!("bf-forge-github: [ok] cargo test passed");
+                }
+                Ok(_) => {
+                    errors.push("cargo test failed — fix failing tests before opening a PR".to_owned());
+                }
+                Err(e) => {
+                    warnings.push(format!("could not run cargo test: {e}"));
+                }
+            }
+        }
+    }
+
+    // ── 5. AI-assistance disclosure notice ───────────────────────────────────
+    eprintln!(
+        "bf-forge-github: [note] AI-assistance footer will be included in the PR body \
+         per Butterfork policy (configurable via BF_NO_AI_FOOTER=1)"
+    );
+
+    // ── report ────────────────────────────────────────────────────────────────
+    for w in &warnings {
+        eprintln!("bf-forge-github: [warn] {w}");
+    }
+    for e in &errors {
+        eprintln!("bf-forge-github: [error] {e}");
+    }
+
+    if !errors.is_empty() {
+        anyhow::bail!("pre-flight failed ({} error(s))", errors.len());
+    }
     Ok(())
 }
 
@@ -216,13 +335,28 @@ fn main() -> Result<()> {
             require_gh()?;
             let slug = github_slug(&args.repo).unwrap_or(args.repo.clone());
             eprintln!("bf-forge-github: opening issue on {slug}");
-            let status = gh_status(&[
-                "issue", "create",
-                "--repo", &slug,
-                "--title", &args.title,
-                "--body", &args.body,
-            ])?;
-            std::process::exit(status.code().unwrap_or(1));
+            // Capture stdout to extract the issue URL that `gh issue create` prints.
+            let out = Command::new("gh")
+                .args([
+                    "issue", "create",
+                    "--repo", &slug,
+                    "--title", &args.title,
+                    "--body", &args.body,
+                ])
+                .stderr(std::process::Stdio::inherit())
+                .output()
+                .context("running `gh issue create`")?;
+            if !out.status.success() {
+                std::process::exit(out.status.code().unwrap_or(1));
+            }
+            let issue_url = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+            if !issue_url.is_empty() {
+                eprintln!("bf-forge-github: issue created: {issue_url}");
+                emit(&Event::IssueCreated {
+                    issue_url: issue_url.clone(),
+                });
+            }
+            emit(&Event::Done { exit_code: 0 });
         }
 
         ForgeCommand::Pr { cmd } => match cmd {
@@ -230,15 +364,28 @@ fn main() -> Result<()> {
                 require_gh()?;
                 let slug = github_slug(&args.repo).unwrap_or(args.repo.clone());
                 preflight_pr(&slug, &args.head)?;
-                let status = gh_status(&[
-                    "pr", "create",
-                    "--repo", &slug,
-                    "--head", &args.head,
-                    "--base", &args.base,
-                    "--title", &args.title,
-                    "--body", &args.body,
-                ])?;
-                std::process::exit(status.code().unwrap_or(1));
+                // Capture stdout to get the PR URL printed by `gh pr create`.
+                let out = Command::new("gh")
+                    .args([
+                        "pr", "create",
+                        "--repo", &slug,
+                        "--head", &args.head,
+                        "--base", &args.base,
+                        "--title", &args.title,
+                        "--body", &args.body,
+                    ])
+                    .stderr(std::process::Stdio::inherit())
+                    .output()
+                    .context("running `gh pr create`")?;
+                if !out.status.success() {
+                    std::process::exit(out.status.code().unwrap_or(1));
+                }
+                let pr_url = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                if !pr_url.is_empty() {
+                    eprintln!("bf-forge-github: PR created: {pr_url}");
+                    emit(&Event::PrCreated { pr_url });
+                }
+                emit(&Event::Done { exit_code: 0 });
             }
             PrCommand::Status { url } => {
                 require_gh()?;

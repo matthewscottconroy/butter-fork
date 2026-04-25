@@ -50,6 +50,12 @@ pub enum Event {
         generation_id: String,
         bin_dir: String,
     },
+    /// An issue was opened in the fork repository.
+    IssueCreated { issue_url: String },
+    /// A feature branch was created in the local checkout.
+    BranchCreated { branch: String },
+    /// A pull request was opened on the forge.
+    PrCreated { pr_url: String },
     /// The operation has finished.
     Done { exit_code: i32 },
 }

@@ -395,7 +395,7 @@ fn main() -> Result<()> {
                         .file_name()
                         .and_then(|n| n.to_string_lossy().parse().ok())
                         .unwrap_or(u128::MAX);
-                    if id_ms < cutoff as u128 {
+                    if id_ms < cutoff {
                         eprintln!("bf-install: gc removing {}", gen_path.display());
                         std::fs::remove_dir_all(&gen_path)?;
                         removed += 1;

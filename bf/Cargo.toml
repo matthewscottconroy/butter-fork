@@ -15,4 +15,5 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 bf-common = { workspace = true }
