@@ -366,7 +366,7 @@ Butterfork will never gate existing capabilities behind payment, never inject te
 
 **Phase 2 — Breadth.** `bf-build-cmake`, `bf-build-meson`, `bf-build-npm`. `bf-forge-gitlab`. Fat-binary packaging as the default end-user artifact. Full `bf-scaffold` with hello-world and POC modes, plus the first round of community-contributable templates. Alternative agent backends (`bf-agent-ollama`) land as proof of swappability. Beta-ready for a small group of friendly developers.
 
-**Phase 3 — Polish.** `butterfork-ui` Tauri app (catalog, diff viewer, PR tracking). macOS and Windows support. `bf-daemon` for background PR watching and long-run continuity.
+**Phase 3 — Polish.** `butterfork-u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i` Tauri app (catalog, diff viewer, PR tracking). macOS and Windows support. `bf-daemon` for background PR watching and long-run continuity.
 
 **Phase 4 — Public launch.** Curated catalog, quality guardrails, community reviewer mode, opt-in telemetry on the *good to contribute to* signal. First component spinoff candidate identified and begun.
 
