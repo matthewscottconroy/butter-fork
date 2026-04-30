@@ -136,7 +136,8 @@ enum SocketResponse {
 }
 
 fn write_response(resp: &SocketResponse) -> String {
-    serde_json::to_string(resp).unwrap_or_else(|_| r#"{"type":"error","message":"serialize error"}"#.to_owned())
+    serde_json::to_string(resp)
+        .unwrap_or_else(|_| r#"{"type":"error","message":"serialize error"}"#.to_owned())
 }
 
 // ── connection handler ────────────────────────────────────────────────────────
@@ -153,7 +154,9 @@ async fn handle_connection(
         let cmd: SocketCommand = match serde_json::from_str(&line) {
             Ok(c) => c,
             Err(e) => {
-                let resp = write_response(&SocketResponse::Error { message: e.to_string() });
+                let resp = write_response(&SocketResponse::Error {
+                    message: e.to_string(),
+                });
                 let _ = writer.write_all(format!("{resp}\n").as_bytes()).await;
                 continue;
             }
@@ -310,10 +313,7 @@ async fn serve(foreground: bool) -> Result<()> {
     if sock.exists() {
         // Stale socket check — try to connect; if it fails the daemon is dead.
         if UnixStream::connect(&sock).await.is_ok() {
-            anyhow::bail!(
-                "daemon already running (socket at {})",
-                sock.display()
-            );
+            anyhow::bail!("daemon already running (socket at {})", sock.display());
         }
         std::fs::remove_file(&sock)?;
     }
@@ -339,9 +339,7 @@ async fn serve(foreground: bool) -> Result<()> {
         "bf-daemon: listening on {} (pid {pid}, foreground={foreground})",
         sock.display()
     );
-    let _ = log_tx
-        .send(format!("daemon started (pid {pid})"))
-        .await;
+    let _ = log_tx.send(format!("daemon started (pid {pid})")).await;
 
     loop {
         tokio::select! {
@@ -368,7 +366,7 @@ async fn serve(foreground: bool) -> Result<()> {
     }
 
     let _ = std::fs::remove_file(&sock);
-    let _ = std::fs::remove_file(&pid_path());
+    let _ = std::fs::remove_file(pid_path());
     let _ = log_tx.send("daemon stopped".to_owned()).await;
     Ok(())
 }
@@ -464,7 +462,10 @@ pub fn run() -> Result<()> {
         DaemonCommand::Log { follow } => {
             let log = log_path();
             if !log.exists() {
-                eprintln!("bf-daemon: no log file at {} — daemon may never have run", log.display());
+                eprintln!(
+                    "bf-daemon: no log file at {} — daemon may never have run",
+                    log.display()
+                );
                 return Ok(());
             }
             if follow {

@@ -20,8 +20,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum BuildCommand {
-    Detect { repo: String },
-    Plan { repo: String },
+    Detect {
+        repo: String,
+    },
+    Plan {
+        repo: String,
+    },
     Run {
         repo: String,
         #[arg(long)]
@@ -79,7 +83,10 @@ fn collect_executables(dir: &Path, build_root: &Path, out: &mut Vec<Artifact>) {
         }
         // Skip known non-binary extensions.
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if matches!(ext, "so" | "a" | "dylib" | "dll" | "o" | "cmake" | "txt" | "make") {
+        if matches!(
+            ext,
+            "so" | "a" | "dylib" | "dll" | "o" | "cmake" | "txt" | "make"
+        ) {
             continue;
         }
         // Check executable bit on Unix.
@@ -152,7 +159,11 @@ pub fn run() -> Result<()> {
             println!("{}", serde_json::to_string(&plan)?);
         }
 
-        BuildCommand::Run { repo, plan: _, release } => {
+        BuildCommand::Run {
+            repo,
+            plan: _,
+            release,
+        } => {
             if !is_cmake_repo(&repo) {
                 anyhow::bail!("no CMakeLists.txt found in {repo}");
             }
@@ -224,7 +235,11 @@ mod tests {
     #[test]
     fn detects_cmake_project() {
         let dir = tmp();
-        fs::write(dir.path().join("CMakeLists.txt"), "cmake_minimum_required(VERSION 3.10)\n").unwrap();
+        fs::write(
+            dir.path().join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.10)\n",
+        )
+        .unwrap();
         assert!(is_cmake_repo(dir.path().to_str().unwrap()));
     }
 

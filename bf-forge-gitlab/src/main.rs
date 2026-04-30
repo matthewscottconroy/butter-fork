@@ -92,7 +92,9 @@ fn require_glab() -> Result<()> {
 
 fn gitlab_slug(url: &str) -> Option<String> {
     let stripped = url.trim_end_matches('/').trim_end_matches(".git");
-    stripped.split_once("gitlab.com/").map(|(_, s)| s.to_owned())
+    stripped
+        .split_once("gitlab.com/")
+        .map(|(_, s)| s.to_owned())
 }
 
 fn repo_name(url: &str) -> String {
@@ -130,7 +132,9 @@ pub fn run() -> Result<()> {
         ForgeCommand::Fork { upstream_url } => {
             if std::env::var("BF_NO_FORK").as_deref() == Ok("1") {
                 eprintln!("bf-forge-gitlab: BF_NO_FORK=1, skipping fork");
-                emit(&Event::ForkCreated { fork_url: upstream_url });
+                emit(&Event::ForkCreated {
+                    fork_url: upstream_url,
+                });
                 emit(&Event::Done { exit_code: 0 });
                 return Ok(());
             }
@@ -163,20 +167,28 @@ pub fn run() -> Result<()> {
             if !status.success() {
                 anyhow::bail!("git clone failed");
             }
-            emit(&Event::Message { text: format!("Cloned to {dest}") });
+            emit(&Event::Message {
+                text: format!("Cloned to {dest}"),
+            });
             emit(&Event::Done { exit_code: 0 });
         }
 
-        ForgeCommand::Issue { cmd: IssueCommand::Open(args) } => {
+        ForgeCommand::Issue {
+            cmd: IssueCommand::Open(args),
+        } => {
             require_glab()?;
             let slug = gitlab_slug(&args.repo).unwrap_or(args.repo.clone());
             eprintln!("bf-forge-gitlab: opening issue on {slug}");
             let out = Command::new("glab")
                 .args([
-                    "issue", "create",
-                    "--repo", &slug,
-                    "--title", &args.title,
-                    "--description", &args.body,
+                    "issue",
+                    "create",
+                    "--repo",
+                    &slug,
+                    "--title",
+                    &args.title,
+                    "--description",
+                    &args.body,
                     "--yes",
                 ])
                 .stderr(std::process::Stdio::inherit())
@@ -197,15 +209,24 @@ pub fn run() -> Result<()> {
             PrCommand::Open(args) => {
                 require_glab()?;
                 let slug = gitlab_slug(&args.repo).unwrap_or(args.repo.clone());
-                eprintln!("bf-forge-gitlab: opening MR on {slug} ({} → {})", args.head, args.base);
+                eprintln!(
+                    "bf-forge-gitlab: opening MR on {slug} ({} → {})",
+                    args.head, args.base
+                );
                 let out = Command::new("glab")
                     .args([
-                        "mr", "create",
-                        "--repo", &slug,
-                        "--source-branch", &args.head,
-                        "--target-branch", &args.base,
-                        "--title", &args.title,
-                        "--description", &args.body,
+                        "mr",
+                        "create",
+                        "--repo",
+                        &slug,
+                        "--source-branch",
+                        &args.head,
+                        "--target-branch",
+                        &args.base,
+                        "--title",
+                        &args.title,
+                        "--description",
+                        &args.body,
                         "--yes",
                     ])
                     .stderr(std::process::Stdio::inherit())

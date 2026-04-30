@@ -66,10 +66,7 @@ fn best_adapter(repo: &str) -> Option<(String, BuildDetection)> {
 
     let mut best: Option<(String, BuildDetection)> = None;
     for adapter in ADAPTERS {
-        let Ok(out) = Command::new(adapter)
-            .args(["detect", repo])
-            .output()
-        else {
+        let Ok(out) = Command::new(adapter).args(["detect", repo]).output() else {
             continue;
         };
         if !out.status.success() {
@@ -117,13 +114,20 @@ pub fn run() -> Result<()> {
             std::process::exit(status.code().unwrap_or(1));
         }
 
-        BuildCommand::Run { repo, plan, release } => {
+        BuildCommand::Run {
+            repo,
+            plan,
+            release,
+        } => {
             eprintln!("bf-build: building '{repo}'");
             let adapter = match std::env::var("BF_BUILD") {
                 Ok(v) => v,
                 Err(_) => match best_adapter(&repo) {
                     Some((a, det)) => {
-                        eprintln!("bf-build: selected adapter '{}' (confidence {:.2})", a, det.confidence);
+                        eprintln!(
+                            "bf-build: selected adapter '{}' (confidence {:.2})",
+                            a, det.confidence
+                        );
                         a
                     }
                     None => {

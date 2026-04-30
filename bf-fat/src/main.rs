@@ -38,7 +38,7 @@ fn main() -> anyhow::Result<()> {
             eprintln!("Usage: invoke via a component symlink, e.g.:");
             eprintln!("  ln -s bf-fat ~/.butterfork/bin/bf");
             eprintln!("  ln -s bf-fat ~/.butterfork/bin/bf-agent");
-            eprintln!("");
+            eprintln!();
             eprintln!("Available components:");
             for comp in COMPONENTS {
                 eprintln!("  {comp}");

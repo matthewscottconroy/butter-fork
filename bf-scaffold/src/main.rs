@@ -111,8 +111,7 @@ fn template_path(name: &str) -> String {
 
 fn load_scaffold_toml(template_dir: &str) -> Result<ScaffoldToml> {
     let toml_path = format!("{template_dir}/scaffold.toml");
-    let s = std::fs::read_to_string(&toml_path)
-        .with_context(|| format!("reading {toml_path}"))?;
+    let s = std::fs::read_to_string(&toml_path).with_context(|| format!("reading {toml_path}"))?;
     toml::from_str(&s).with_context(|| format!("parsing {toml_path}"))
 }
 
@@ -248,7 +247,12 @@ fn template_show(name: &str) -> Result<()> {
 
 // ── template: apply ───────────────────────────────────────────────────────────
 
-fn apply_template(template_name: &str, target: &str, project_name: &str, description: &str) -> Result<()> {
+fn apply_template(
+    template_name: &str,
+    target: &str,
+    project_name: &str,
+    description: &str,
+) -> Result<()> {
     let src = template_path(template_name);
     if !Path::new(&src).exists() {
         eprintln!("bf-scaffold: template '{template_name}' not found");
@@ -262,7 +266,12 @@ fn apply_template(template_name: &str, target: &str, project_name: &str, descrip
         meta.template.name, meta.template.description
     );
 
-    copy_template_dir(Path::new(&src), Path::new(target), project_name, description)?;
+    copy_template_dir(
+        Path::new(&src),
+        Path::new(target),
+        project_name,
+        description,
+    )?;
     Ok(())
 }
 
@@ -374,9 +383,7 @@ fn write_common_files(root: &Path, project_name: &str, description: &str) -> Res
         root.join(".gitignore"),
         "/target\n*.rs.bk\n*.pdb\n.bf/index/\n",
     )?;
-    let readme = format!(
-        "# {project_name}\n\n{description}\n\n## License\n\nApache-2.0 OR MIT\n"
-    );
+    let readme = format!("# {project_name}\n\n{description}\n\n## License\n\nApache-2.0 OR MIT\n");
     std::fs::write(root.join("README.md"), readme)?;
     std::fs::write(
         root.join("LICENSE-APACHE"),

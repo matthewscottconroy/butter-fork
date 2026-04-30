@@ -76,8 +76,14 @@ fn add_creates_generation_directory() {
     assert_eq!(entries.len(), 1, "exactly one generation should be created");
 
     let gen_dir = &entries[0].path();
-    assert!(gen_dir.join("generation.json").exists(), "generation.json must be written");
-    assert!(gen_dir.join("bin/myprog").exists(), "artifact should be copied");
+    assert!(
+        gen_dir.join("generation.json").exists(),
+        "generation.json must be written"
+    );
+    assert!(
+        gen_dir.join("bin/myprog").exists(),
+        "artifact should be copied"
+    );
 }
 
 #[test]
@@ -180,5 +186,8 @@ fn gc_removes_old_generation() {
         "gc should succeed\nstderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(!gen_dir.exists(), "old generation should have been removed by gc");
+    assert!(
+        !gen_dir.exists(),
+        "old generation should have been removed by gc"
+    );
 }

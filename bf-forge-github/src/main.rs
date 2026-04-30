@@ -100,9 +100,7 @@ fn require_gh() -> Result<()> {
 /// Return the slug `owner/repo` from a GitHub URL.
 fn github_slug(url: &str) -> Option<String> {
     // Handles https://github.com/owner/repo and https://github.com/owner/repo.git
-    let stripped = url
-        .trim_end_matches('/')
-        .trim_end_matches(".git");
+    let stripped = url.trim_end_matches('/').trim_end_matches(".git");
     let parts: Vec<&str> = stripped.splitn(2, "github.com/").collect();
     parts.get(1).map(|s| s.to_string())
 }
@@ -162,7 +160,10 @@ fn load_policy(repo_slug: &str) -> PolicyConfig {
     let path = format!("{bf_home}/pr-policy/{name}.toml");
 
     #[derive(serde::Deserialize, Default)]
-    struct PolicyFile { #[serde(default)] policy: PolicyConfig }
+    struct PolicyFile {
+        #[serde(default)]
+        policy: PolicyConfig,
+    }
 
     if let Ok(s) = std::fs::read_to_string(&path) {
         match toml::from_str::<PolicyFile>(&s) {
@@ -191,8 +192,12 @@ fn detect_spdx(repo_slug: &str) -> Option<(String, bool)> {
         return None;
     }
     let s = spdx.to_uppercase();
-    let is_copyleft = s.contains("GPL") || s.contains("AGPL") || s.contains("LGPL")
-        || s.contains("EUPL") || s.contains("OSL") || s.contains("MPL");
+    let is_copyleft = s.contains("GPL")
+        || s.contains("AGPL")
+        || s.contains("LGPL")
+        || s.contains("EUPL")
+        || s.contains("OSL")
+        || s.contains("MPL");
     Some((spdx, is_copyleft))
 }
 
@@ -287,13 +292,16 @@ fn preflight_pr(repo_slug: &str, head: &str) -> Result<()> {
             // Whitespace churn: compare full diff vs ignore-whitespace diff.
             if policy.warn_whitespace_churn && total > 0 {
                 let ws_stat = Command::new("git")
-                    .args(["diff", "origin/main..HEAD", "--ignore-all-space", "--shortstat"])
+                    .args([
+                        "diff",
+                        "origin/main..HEAD",
+                        "--ignore-all-space",
+                        "--shortstat",
+                    ])
                     .current_dir(local_path)
                     .output();
                 if let Ok(ws_out) = ws_stat {
-                    let ws_total = parse_shortstat_total(
-                        &String::from_utf8_lossy(&ws_out.stdout),
-                    );
+                    let ws_total = parse_shortstat_total(&String::from_utf8_lossy(&ws_out.stdout));
                     // If ignoring whitespace drops >80% of the diff, flag it.
                     if total > 10 && ws_total < total / 5 {
                         warnings.push(format!(
@@ -358,9 +366,7 @@ fn preflight_pr(repo_slug: &str, head: &str) -> Result<()> {
             eprintln!("bf-forge-github: [note] AI-assistance footer will be included in PR body");
         }
         AiFooterPolicy::Exclude => {
-            eprintln!(
-                "bf-forge-github: [note] AI-assistance footer suppressed per project policy"
-            );
+            eprintln!("bf-forge-github: [note] AI-assistance footer suppressed per project policy");
         }
         AiFooterPolicy::Ask => {
             eprintln!(
@@ -392,7 +398,9 @@ pub fn run() -> Result<()> {
         ForgeCommand::Fork { upstream_url } => {
             // BF_NO_FORK=1 is used in tests and for repos the user already owns.
             if std::env::var("BF_NO_FORK").as_deref() == Ok("1") {
-                eprintln!("bf-forge-github: BF_NO_FORK=1, skipping fork; treating upstream as fork");
+                eprintln!(
+                    "bf-forge-github: BF_NO_FORK=1, skipping fork; treating upstream as fork"
+                );
                 let fork_url = upstream_url.clone();
                 emit(&Event::ForkCreated { fork_url });
                 emit(&Event::Done { exit_code: 0 });
@@ -467,10 +475,14 @@ pub fn run() -> Result<()> {
             // Capture stdout to extract the issue URL that `gh issue create` prints.
             let out = Command::new("gh")
                 .args([
-                    "issue", "create",
-                    "--repo", &slug,
-                    "--title", &args.title,
-                    "--body", &args.body,
+                    "issue",
+                    "create",
+                    "--repo",
+                    &slug,
+                    "--title",
+                    &args.title,
+                    "--body",
+                    &args.body,
                 ])
                 .stderr(std::process::Stdio::inherit())
                 .output()
@@ -512,12 +524,18 @@ pub fn run() -> Result<()> {
                 // Capture stdout to get the PR URL printed by `gh pr create`.
                 let out = Command::new("gh")
                     .args([
-                        "pr", "create",
-                        "--repo", &slug,
-                        "--head", &args.head,
-                        "--base", &args.base,
-                        "--title", &args.title,
-                        "--body", &body,
+                        "pr",
+                        "create",
+                        "--repo",
+                        &slug,
+                        "--head",
+                        &args.head,
+                        "--base",
+                        &args.base,
+                        "--title",
+                        &args.title,
+                        "--body",
+                        &body,
                     ])
                     .stderr(std::process::Stdio::inherit())
                     .output()
@@ -558,7 +576,8 @@ pub fn run() -> Result<()> {
                                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(
                                     &String::from_utf8_lossy(&o.stdout),
                                 ) {
-                                    let pr_state = v["state"].as_str().unwrap_or("UNKNOWN").to_owned();
+                                    let pr_state =
+                                        v["state"].as_str().unwrap_or("UNKNOWN").to_owned();
                                     let title = v["title"].as_str().unwrap_or("").to_owned();
                                     if pr_state != last_state {
                                         eprintln!("bf-forge-github: PR '{title}' → {pr_state}");

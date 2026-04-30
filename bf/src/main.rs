@@ -33,10 +33,7 @@ enum BfCommand {
         debug: bool,
     },
     /// Submit a natural-language change request to the agent for a project (Phase 1)
-    Request {
-        slug: String,
-        description: String,
-    },
+    Request { slug: String, description: String },
     /// Open an upstream PR for a completed change (Phase 1)
     Submit { slug: String },
     /// Scaffold a new OSS project from an idea
@@ -129,14 +126,23 @@ pub fn record_telemetry(event: TelemetryEvent) {
     if !telemetry_enabled() {
         return;
     }
-    let record = TelemetryRecord { timestamp: now_secs(), event };
-    let Ok(line) = serde_json::to_string(&record) else { return };
+    let record = TelemetryRecord {
+        timestamp: now_secs(),
+        event,
+    };
+    let Ok(line) = serde_json::to_string(&record) else {
+        return;
+    };
     let path = telemetry_log_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         let _ = writeln!(f, "{line}");
     }
 }
@@ -149,10 +155,22 @@ struct SelfTestResult {
     note: String,
 }
 
-fn self_test_check(results: &mut Vec<SelfTestResult>, name: &'static str, passed: bool, note: impl Into<String>) {
+fn self_test_check(
+    results: &mut Vec<SelfTestResult>,
+    name: &'static str,
+    passed: bool,
+    note: impl Into<String>,
+) {
     let note = note.into();
     let icon = if passed { "[ok]  " } else { "[FAIL]" };
-    eprintln!("bf self-test: {icon} {name}{}", if note.is_empty() { String::new() } else { format!(" — {note}") });
+    eprintln!(
+        "bf self-test: {icon} {name}{}",
+        if note.is_empty() {
+            String::new()
+        } else {
+            format!(" — {note}")
+        }
+    );
     results.push(SelfTestResult { name, passed, note });
 }
 
@@ -212,8 +230,7 @@ fn extract_manifest_path(events: &[Event]) -> Option<String> {
 
 fn install(slug: &str, dest_override: Option<String>, no_fork: bool, release: bool) -> Result<()> {
     let home = std::env::var("HOME").unwrap_or_default();
-    let bf_home = std::env::var("BF_HOME")
-        .unwrap_or_else(|_| format!("{home}/.butterfork"));
+    let bf_home = std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
 
     // ── step 1: resolve upstream URL from catalog ─────────────────────────────
     eprintln!("bf: step 1/5 — catalog lookup for '{slug}'");
@@ -231,8 +248,7 @@ fn install(slug: &str, dest_override: Option<String>, no_fork: bool, release: bo
         }
     }
 
-    let upstream_url = extract_upstream_url(&cat_out.stdout)
-        .unwrap_or_else(|| slug.to_owned());
+    let upstream_url = extract_upstream_url(&cat_out.stdout).unwrap_or_else(|| slug.to_owned());
     eprintln!("bf: upstream: {upstream_url}");
 
     // ── step 2: fork (or skip) ────────────────────────────────────────────────
@@ -255,8 +271,7 @@ fn install(slug: &str, dest_override: Option<String>, no_fork: bool, release: bo
 
     // ── step 3: clone ─────────────────────────────────────────────────────────
     let project_slug = slug_from_url(&fork_url);
-    let dest = dest_override
-        .unwrap_or_else(|| format!("{bf_home}/repos/{project_slug}"));
+    let dest = dest_override.unwrap_or_else(|| format!("{bf_home}/repos/{project_slug}"));
 
     if std::path::Path::new(&dest).exists() {
         eprintln!("bf: step 3/5 — destination already exists, pulling latest");
@@ -320,9 +335,7 @@ fn install(slug: &str, dest_override: Option<String>, no_fork: bool, release: bo
 
     eprintln!("bf: '{project_slug}' installed — binaries under {bf_home}/bin/");
     eprintln!("bf: add {bf_home}/bin to your PATH if not already there");
-    eprintln!(
-        "bf: to roll back: bf rescue activate {project_slug} <previous-generation-id>"
-    );
+    eprintln!("bf: to roll back: bf rescue activate {project_slug} <previous-generation-id>");
     emit(&Event::InstallComplete {
         project: project_slug.clone(),
         generation_id: "latest".to_owned(),
@@ -445,8 +458,7 @@ fn generate_tool_manifest() -> serde_json::Value {
 
 fn request(slug: &str, description: &str) -> Result<()> {
     let home = std::env::var("HOME").unwrap_or_default();
-    let bf_home =
-        std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
+    let bf_home = std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
     let repo_path = format!("{bf_home}/repos/{slug}");
 
     if !std::path::Path::new(&repo_path).exists() {
@@ -487,8 +499,7 @@ fn request(slug: &str, description: &str) -> Result<()> {
     // Write the tool manifest to a temp file.
     let manifest = generate_tool_manifest();
     let tmp = tempfile::NamedTempFile::new().context("creating temp manifest file")?;
-    serde_json::to_writer_pretty(tmp.as_file(), &manifest)
-        .context("writing tool manifest")?;
+    serde_json::to_writer_pretty(tmp.as_file(), &manifest).context("writing tool manifest")?;
     let manifest_path = tmp.path().to_string_lossy().to_string();
 
     eprintln!("bf: invoking agent — prompt: {description}");
@@ -517,8 +528,7 @@ fn request(slug: &str, description: &str) -> Result<()> {
 
 fn submit(slug: &str) -> Result<()> {
     let home = std::env::var("HOME").unwrap_or_default();
-    let bf_home =
-        std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
+    let bf_home = std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
     let repo_path = format!("{bf_home}/repos/{slug}");
 
     if !std::path::Path::new(&repo_path).exists() {
@@ -582,11 +592,7 @@ fn submit(slug: &str) -> Result<()> {
         .current_dir(&repo_path)
         .output()?;
     let commit_msg = String::from_utf8_lossy(&log_out.stdout).to_string();
-    let pr_title = commit_msg
-        .lines()
-        .next()
-        .unwrap_or(&branch)
-        .to_owned();
+    let pr_title = commit_msg.lines().next().unwrap_or(&branch).to_owned();
     let pr_body = format!(
         "{commit_msg}\n---\n\
          *Drafted with [Butterfork](https://github.com/matthewscottconroy/butter-fork) \
@@ -597,12 +603,8 @@ fn submit(slug: &str) -> Result<()> {
     let pr_status = spawn_inherit(
         "bf-forge",
         &[
-            "pr", "open",
-            "--repo", &pr_repo,
-            "--head", &branch,
-            "--base", "main",
-            "--title", &pr_title,
-            "--body", &pr_body,
+            "pr", "open", "--repo", &pr_repo, "--head", &branch, "--base", "main", "--title",
+            &pr_title, "--body", &pr_body,
         ],
     )?;
     std::process::exit(pr_status.code().unwrap_or(1));
@@ -664,10 +666,10 @@ pub fn run() -> Result<()> {
 
             // ── external tools ─────────────────────────────────────────────
             let ext_tools = [
-                ("git",   "version control"),
-                ("gh",    "GitHub CLI (for forge operations)"),
+                ("git", "version control"),
+                ("gh", "GitHub CLI (for forge operations)"),
                 ("cargo", "Rust build system"),
-                ("rg",    "ripgrep (faster grep for bf-index)"),
+                ("rg", "ripgrep (faster grep for bf-index)"),
                 ("bwrap", "bubblewrap sandbox"),
             ];
             eprintln!("bf: --- external tools ---");
@@ -675,7 +677,10 @@ pub fn run() -> Result<()> {
                 match Command::new(tool).arg("--version").output() {
                     Ok(out) if out.status.success() => {
                         let v = String::from_utf8_lossy(&out.stdout);
-                        eprintln!("  [ok]      {tool}: {}", v.lines().next().unwrap_or("").trim());
+                        eprintln!(
+                            "  [ok]      {tool}: {}",
+                            v.lines().next().unwrap_or("").trim()
+                        );
                     }
                     _ => {
                         let msg = format!("{tool} not found — {purpose}");
@@ -707,7 +712,8 @@ pub fn run() -> Result<()> {
             if std::env::var("ANTHROPIC_API_KEY").is_ok() {
                 eprintln!("  [ok]      ANTHROPIC_API_KEY: set");
             } else {
-                warnings.push("ANTHROPIC_API_KEY not set — bf-agent (Claude) will not work".to_owned());
+                warnings
+                    .push("ANTHROPIC_API_KEY not set — bf-agent (Claude) will not work".to_owned());
                 eprintln!("  [warn]    ANTHROPIC_API_KEY: not set (required for bf-agent)");
             }
 
@@ -764,7 +770,11 @@ pub fn run() -> Result<()> {
             } else if errors.is_empty() {
                 eprintln!("bf: {} warning(s), no errors", warnings.len());
             } else {
-                eprintln!("bf: {} error(s), {} warning(s)", errors.len(), warnings.len());
+                eprintln!(
+                    "bf: {} error(s), {} warning(s)",
+                    errors.len(),
+                    warnings.len()
+                );
                 eprintln!("bf: install missing components with `cargo install --path <crate>` or `scripts/fat-install.sh`");
                 std::process::exit(bf_common::exit::UNAVAILABLE);
             }
@@ -779,8 +789,7 @@ pub fn run() -> Result<()> {
                 slug,
                 generation_id,
             } => {
-                let status =
-                    spawn_inherit("bf-install", &["activate", &slug, &generation_id])?;
+                let status = spawn_inherit("bf-install", &["activate", &slug, &generation_id])?;
                 std::process::exit(status.code().unwrap_or(1));
             }
         },
@@ -823,8 +832,13 @@ pub fn run() -> Result<()> {
                         0
                     };
                     eprintln!("bf telemetry: enabled={enabled}");
-                    eprintln!("bf telemetry: {count} record(s) stored at {}", log.display());
-                    eprintln!("bf telemetry: records are local-only and never transmitted automatically");
+                    eprintln!(
+                        "bf telemetry: {count} record(s) stored at {}",
+                        log.display()
+                    );
+                    eprintln!(
+                        "bf telemetry: records are local-only and never transmitted automatically"
+                    );
                     println!(
                         "{}",
                         serde_json::json!({
@@ -839,7 +853,10 @@ pub fn run() -> Result<()> {
                         std::fs::create_dir_all(parent)?;
                     }
                     std::fs::write(&opt_in, "")?;
-                    eprintln!("bf telemetry: enabled — events will be recorded to {}", log.display());
+                    eprintln!(
+                        "bf telemetry: enabled — events will be recorded to {}",
+                        log.display()
+                    );
                     eprintln!("bf telemetry: disable at any time with `bf telemetry disable`");
                 }
                 TelemetryCommand::Disable => {
@@ -895,22 +912,31 @@ pub fn run() -> Result<()> {
                     .ok()
                     .and_then(|v| v["adapter"].as_str().map(str::to_owned))
                     .unwrap_or_else(|| "unknown".to_owned());
-                    self_test_check(&mut results, "bf-build detect", true, format!("adapter={adapter}"));
+                    self_test_check(
+                        &mut results,
+                        "bf-build detect",
+                        true,
+                        format!("adapter={adapter}"),
+                    );
                 }
                 Ok(o) => self_test_check(
-                    &mut results, "bf-build detect", false,
+                    &mut results,
+                    "bf-build detect",
+                    false,
                     format!("exit {}", o.status.code().unwrap_or(1)),
                 ),
                 Err(e) => self_test_check(&mut results, "bf-build detect", false, e.to_string()),
             }
 
             // ── 2. bf-build plan ────────────────────────────────────────────
-            let plan_out = Command::new("bf-build")
-                .args(["plan", &abs_repo])
-                .output();
+            let plan_out = Command::new("bf-build").args(["plan", &abs_repo]).output();
             self_test_check(
-                &mut results, "bf-build plan",
-                plan_out.as_ref().map(|o| o.status.success()).unwrap_or(false),
+                &mut results,
+                "bf-build plan",
+                plan_out
+                    .as_ref()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false),
                 plan_out.err().map(|e| e.to_string()).unwrap_or_default(),
             );
 
@@ -924,8 +950,12 @@ pub fn run() -> Result<()> {
                         .args(["update", &d.path().to_string_lossy()])
                         .output();
                     self_test_check(
-                        &mut results, "bf-index update",
-                        idx_out.as_ref().map(|o| o.status.success()).unwrap_or(false),
+                        &mut results,
+                        "bf-index update",
+                        idx_out
+                            .as_ref()
+                            .map(|o| o.status.success())
+                            .unwrap_or(false),
                         idx_out.err().map(|e| e.to_string()).unwrap_or_default(),
                     );
                 }
@@ -947,9 +977,14 @@ pub fn run() -> Result<()> {
                     })
                     .unwrap_or(false);
                 self_test_check(
-                    &mut results, "bf-sandbox run",
+                    &mut results,
+                    "bf-sandbox run",
                     passed,
-                    if passed { "echo test passed".to_owned() } else { "sandbox echo test failed (try --no-sandbox in CI)".to_owned() },
+                    if passed {
+                        "echo test passed".to_owned()
+                    } else {
+                        "sandbox echo test failed (try --no-sandbox in CI)".to_owned()
+                    },
                 );
             }
 
@@ -958,8 +993,12 @@ pub fn run() -> Result<()> {
                 .args(["search", "ripgrep"])
                 .output();
             self_test_check(
-                &mut results, "bf-catalog search",
-                cat_out.as_ref().map(|o| o.status.success()).unwrap_or(false),
+                &mut results,
+                "bf-catalog search",
+                cat_out
+                    .as_ref()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false),
                 cat_out.err().map(|e| e.to_string()).unwrap_or_default(),
             );
 
@@ -991,6 +1030,11 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -999,8 +1043,14 @@ mod tests {
 
     #[test]
     fn slug_from_url_strips_dotgit() {
-        assert_eq!(slug_from_url("https://github.com/BurntSushi/ripgrep"), "ripgrep");
-        assert_eq!(slug_from_url("https://github.com/BurntSushi/ripgrep.git"), "ripgrep");
+        assert_eq!(
+            slug_from_url("https://github.com/BurntSushi/ripgrep"),
+            "ripgrep"
+        );
+        assert_eq!(
+            slug_from_url("https://github.com/BurntSushi/ripgrep.git"),
+            "ripgrep"
+        );
         assert_eq!(slug_from_url("https://github.com/sharkdp/fd/"), "fd");
     }
 
@@ -1009,14 +1059,20 @@ mod tests {
         let stdout = b"{\"type\":\"fork-created\",\"fork_url\":\"https://github.com/user/repo\"}\nnot-json\n{\"type\":\"done\",\"exit_code\":0}\n";
         let events = parse_events(stdout);
         assert_eq!(events.len(), 2);
-        assert!(matches!(&events[0], Event::ForkCreated { fork_url } if fork_url == "https://github.com/user/repo"));
+        assert!(
+            matches!(&events[0], Event::ForkCreated { fork_url } if fork_url == "https://github.com/user/repo")
+        );
     }
 
     #[test]
     fn extract_fork_url_finds_event() {
         let events = vec![
-            Event::Message { text: "forking".to_owned() },
-            Event::ForkCreated { fork_url: "https://github.com/user/rg".to_owned() },
+            Event::Message {
+                text: "forking".to_owned(),
+            },
+            Event::ForkCreated {
+                fork_url: "https://github.com/user/rg".to_owned(),
+            },
             Event::Done { exit_code: 0 },
         ];
         assert_eq!(
@@ -1027,17 +1083,12 @@ mod tests {
 
     #[test]
     fn extract_manifest_path_finds_event() {
-        let events = vec![
-            Event::BuildComplete { manifest_path: "/tmp/bf-artifact-manifest.json".to_owned() },
-        ];
+        let events = vec![Event::BuildComplete {
+            manifest_path: "/tmp/bf-artifact-manifest.json".to_owned(),
+        }];
         assert_eq!(
             extract_manifest_path(&events),
             Some("/tmp/bf-artifact-manifest.json".to_owned())
         );
     }
-}
-
-#[allow(dead_code)]
-fn main() -> Result<()> {
-    run()
 }

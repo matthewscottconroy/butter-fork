@@ -20,8 +20,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum BuildCommand {
-    Detect { repo: String },
-    Plan { repo: String },
+    Detect {
+        repo: String,
+    },
+    Plan {
+        repo: String,
+    },
     Run {
         repo: String,
         #[arg(long)]
@@ -76,7 +80,10 @@ fn collect_executables(dir: &Path, out: &mut Vec<Artifact>) {
             continue;
         }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if matches!(ext, "so" | "a" | "dylib" | "dll" | "o" | "ninja" | "log" | "txt") {
+        if matches!(
+            ext,
+            "so" | "a" | "dylib" | "dll" | "o" | "ninja" | "log" | "txt"
+        ) {
             continue;
         }
         #[cfg(unix)]
@@ -118,11 +125,7 @@ pub fn run() -> Result<()> {
                 steps: vec![
                     BuildStep {
                         name: "setup".to_owned(),
-                        command: vec![
-                            "meson".to_owned(),
-                            "setup".to_owned(),
-                            "build".to_owned(),
-                        ],
+                        command: vec!["meson".to_owned(), "setup".to_owned(), "build".to_owned()],
                         env: Default::default(),
                     },
                     BuildStep {
@@ -140,7 +143,11 @@ pub fn run() -> Result<()> {
             println!("{}", serde_json::to_string(&plan)?);
         }
 
-        BuildCommand::Run { repo, plan: _, release } => {
+        BuildCommand::Run {
+            repo,
+            plan: _,
+            release,
+        } => {
             if !is_meson_repo(&repo) {
                 anyhow::bail!("no meson.build in {repo}");
             }
@@ -183,10 +190,7 @@ pub fn run() -> Result<()> {
             };
 
             let manifest_path = build_dir.join("bf-artifact-manifest.json");
-            std::fs::write(
-                &manifest_path,
-                serde_json::to_string_pretty(&manifest)?,
-            )?;
+            std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
             emit(&Event::BuildComplete {
                 manifest_path: manifest_path.to_string_lossy().to_string(),
             });

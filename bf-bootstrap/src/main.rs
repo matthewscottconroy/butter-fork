@@ -77,9 +77,7 @@ fn extract_fork_url(ndjson: &str) -> Option<String> {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
-    let prefix = cli
-        .prefix
-        .unwrap_or_else(|| format!("{home}/.butterfork"));
+    let prefix = cli.prefix.unwrap_or_else(|| format!("{home}/.butterfork"));
     let dest = format!("{prefix}/repos/butterfork");
 
     eprintln!("bf-bootstrap: installing Butterfork into {prefix}");

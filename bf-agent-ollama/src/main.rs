@@ -45,8 +45,8 @@ pub struct ToolManifest {
 }
 
 fn load_manifest(path: &str) -> Result<ToolManifest> {
-    let s = std::fs::read_to_string(path)
-        .with_context(|| format!("reading tool manifest: {path}"))?;
+    let s =
+        std::fs::read_to_string(path).with_context(|| format!("reading tool manifest: {path}"))?;
     serde_json::from_str(&s).context("parsing tool manifest JSON")
 }
 
@@ -107,14 +107,15 @@ fn run_tool(name: &str, input: &Value, repo: &str, specs: &[ToolSpec]) -> Result
     match name {
         "read_file" => {
             let path = input["path"].as_str().context("path required")?;
-            std::fs::read_to_string(repo_path.join(path))
-                .with_context(|| format!("reading {path}"))
+            std::fs::read_to_string(repo_path.join(path)).with_context(|| format!("reading {path}"))
         }
         "write_file" => {
             let path = input["path"].as_str().context("path required")?;
             let content = input["content"].as_str().context("content required")?;
             let full = repo_path.join(path);
-            if let Some(p) = full.parent() { std::fs::create_dir_all(p)?; }
+            if let Some(p) = full.parent() {
+                std::fs::create_dir_all(p)?;
+            }
             std::fs::write(&full, content)?;
             Ok(format!("Wrote {} bytes to {path}", content.len()))
         }
@@ -125,7 +126,11 @@ fn run_tool(name: &str, input: &Value, repo: &str, specs: &[ToolSpec]) -> Result
                 .filter_map(|e| e.ok())
                 .map(|e| {
                     let n = e.file_name().to_string_lossy().to_string();
-                    if e.file_type().map(|t| t.is_dir()).unwrap_or(false) { format!("{n}/") } else { n }
+                    if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        format!("{n}/")
+                    } else {
+                        n
+                    }
                 })
                 .collect();
             entries.sort();
@@ -137,45 +142,61 @@ fn run_tool(name: &str, input: &Value, repo: &str, specs: &[ToolSpec]) -> Result
                 .as_array()
                 .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
                 .unwrap_or_default();
-            let out = Command::new(cmd).args(&args).current_dir(repo).output()
+            let out = Command::new(cmd)
+                .args(&args)
+                .current_dir(repo)
+                .output()
                 .with_context(|| format!("running {cmd}"))?;
             let combined = format!(
                 "{}{}",
                 String::from_utf8_lossy(&out.stdout),
                 String::from_utf8_lossy(&out.stderr)
             );
-            if !out.status.success() { anyhow::bail!("exited {}: {combined}", out.status); }
+            if !out.status.success() {
+                anyhow::bail!("exited {}: {combined}", out.status);
+            }
             Ok(combined)
         }
         "git_add" => {
-            let paths: Vec<&str> = input["paths"].as_array()
+            let paths: Vec<&str> = input["paths"]
+                .as_array()
                 .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
                 .unwrap_or_else(|| vec!["."]);
             let mut args = vec!["add", "--"];
             args.extend(paths.iter().copied());
             let s = Command::new("git").args(&args).current_dir(repo).status()?;
-            if !s.success() { anyhow::bail!("git add failed"); }
+            if !s.success() {
+                anyhow::bail!("git add failed");
+            }
             Ok("Staged changes".to_owned())
         }
         "git_commit" => {
             let message = input["message"].as_str().context("message required")?;
             let out = Command::new("git")
                 .args(["commit", "-s", "-m", message])
-                .current_dir(repo).output()?;
+                .current_dir(repo)
+                .output()?;
             if !out.status.success() {
-                anyhow::bail!("git commit failed: {}", String::from_utf8_lossy(&out.stderr));
+                anyhow::bail!(
+                    "git commit failed: {}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
             }
             Ok(String::from_utf8_lossy(&out.stdout).to_string())
         }
         "git_diff" => {
             let staged = input["staged"].as_bool().unwrap_or(false);
             let mut args = vec!["diff"];
-            if staged { args.push("--staged"); }
+            if staged {
+                args.push("--staged");
+            }
             let out = Command::new("git").args(&args).current_dir(repo).output()?;
             Ok(String::from_utf8_lossy(&out.stdout).to_string())
         }
         _ => {
-            let spec = specs.iter().find(|s| s.name == name)
+            let spec = specs
+                .iter()
+                .find(|s| s.name == name)
                 .with_context(|| format!("unknown tool: {name}"))?;
             if spec.command.first().map(|s| s.as_str()) == Some("__builtin__") {
                 anyhow::bail!("unimplemented builtin: {name}");
@@ -191,14 +212,19 @@ fn run_tool(name: &str, input: &Value, repo: &str, specs: &[ToolSpec]) -> Result
                 }
             }
             let (bin, rest) = argv.split_first().context("empty command")?;
-            let out = Command::new(bin).args(rest).current_dir(repo).output()
+            let out = Command::new(bin)
+                .args(rest)
+                .current_dir(repo)
+                .output()
                 .with_context(|| format!("running {bin}"))?;
             let combined = format!(
                 "{}{}",
                 String::from_utf8_lossy(&out.stdout),
                 String::from_utf8_lossy(&out.stderr)
             );
-            if !out.status.success() { anyhow::bail!("tool failed: {combined}"); }
+            if !out.status.success() {
+                anyhow::bail!("tool failed: {combined}");
+            }
             Ok(combined)
         }
     }
@@ -252,16 +278,24 @@ fn run_agent_loop(
     });
 
     for iteration in 0..max_iterations {
-        eprintln!("bf-agent-ollama: iteration {}/{max_iterations}", iteration + 1);
+        eprintln!(
+            "bf-agent-ollama: iteration {}/{max_iterations}",
+            iteration + 1
+        );
 
         let response = client.chat(&messages, &ollama_tools)?;
 
         let message = &response["message"];
         let content = message["content"].as_str().unwrap_or("").to_owned();
-        let tool_calls = message["tool_calls"].as_array().cloned().unwrap_or_default();
+        let tool_calls = message["tool_calls"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
 
         if !content.is_empty() {
-            emit(&Event::Message { text: content.clone() });
+            emit(&Event::Message {
+                text: content.clone(),
+            });
         }
 
         // Push assistant message
@@ -311,7 +345,9 @@ fn run_agent_loop(
     }
 
     eprintln!("bf-agent-ollama: reached max_iterations ({max_iterations})");
-    emit(&Event::Done { exit_code: exit::TEMPFAIL });
+    emit(&Event::Done {
+        exit_code: exit::TEMPFAIL,
+    });
     std::process::exit(exit::TEMPFAIL);
 }
 
@@ -320,8 +356,8 @@ fn run_agent_loop(
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    let base_url = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://localhost:11434".to_owned());
+    let base_url =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_owned());
 
     eprintln!("bf-agent-ollama: model={} host={}", cli.model, base_url);
 
@@ -329,11 +365,22 @@ pub fn run() -> Result<()> {
     eprintln!(
         "bf-agent-ollama: loaded {} tool(s): {}",
         manifest.tools.len(),
-        manifest.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")
+        manifest
+            .tools
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     let client = OllamaClient::new(base_url, cli.model);
-    run_agent_loop(&client, &cli.repo, &cli.prompt, &manifest.tools, cli.max_iterations)
+    run_agent_loop(
+        &client,
+        &cli.repo,
+        &cli.prompt,
+        &manifest.tools,
+        cli.max_iterations,
+    )
 }
 
 #[allow(dead_code)]
@@ -348,9 +395,21 @@ mod tests {
 
     fn tmp_repo() -> TempDir {
         let dir = tempfile::tempdir().unwrap();
-        Command::new("git").args(["init", "-q"]).current_dir(dir.path()).status().unwrap();
-        Command::new("git").args(["config", "user.email", "t@t.com"]).current_dir(dir.path()).status().unwrap();
-        Command::new("git").args(["config", "user.name", "T"]).current_dir(dir.path()).status().unwrap();
+        Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
         dir
     }
 
@@ -358,7 +417,12 @@ mod tests {
     fn tool_read_write() {
         let dir = tmp_repo();
         let repo = dir.path().to_str().unwrap();
-        let (_, err) = execute_tool("write_file", &json!({"path":"hi.txt","content":"hello"}), repo, &[]);
+        let (_, err) = execute_tool(
+            "write_file",
+            &json!({"path":"hi.txt","content":"hello"}),
+            repo,
+            &[],
+        );
         assert!(!err);
         let (content, err) = execute_tool("read_file", &json!({"path":"hi.txt"}), repo, &[]);
         assert!(!err);

@@ -64,12 +64,24 @@ fn load_profile(name: &str) -> ProfileConfig {
     }
 
     match name {
-        "build" => ProfileConfig { unshare_net: Some(true), ..Default::default() },
-        "agent" => ProfileConfig { unshare_net: Some(false), ..Default::default() },
-        "run" => ProfileConfig { unshare_net: Some(false), ..Default::default() },
+        "build" => ProfileConfig {
+            unshare_net: Some(true),
+            ..Default::default()
+        },
+        "agent" => ProfileConfig {
+            unshare_net: Some(false),
+            ..Default::default()
+        },
+        "run" => ProfileConfig {
+            unshare_net: Some(false),
+            ..Default::default()
+        },
         _ => {
             eprintln!("bf-sandbox: unknown profile '{name}'; using build defaults");
-            ProfileConfig { unshare_net: Some(true), ..Default::default() }
+            ProfileConfig {
+                unshare_net: Some(true),
+                ..Default::default()
+            }
         }
     }
 }
@@ -115,8 +127,10 @@ fn tool_available(name: &str) -> bool {
 
 fn build_bwrap_args(profile: &ProfileConfig, extra_binds: &[String]) -> Vec<String> {
     let mut args: Vec<String> = vec![
-        "--proc".to_owned(), "/proc".to_owned(),
-        "--dev".to_owned(), "/dev".to_owned(),
+        "--proc".to_owned(),
+        "/proc".to_owned(),
+        "--dev".to_owned(),
+        "/dev".to_owned(),
     ];
 
     for sys in &["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"] {
@@ -200,7 +214,12 @@ fn build_container_args(
 
     // Working directory — use $HOME if available.
     if let Ok(home) = std::env::var("HOME") {
-        args.extend(["-v".to_owned(), format!("{home}:{home}"), "-w".to_owned(), home]);
+        args.extend([
+            "-v".to_owned(),
+            format!("{home}:{home}"),
+            "-w".to_owned(),
+            home,
+        ]);
     }
 
     // Profile binds.
@@ -244,10 +263,7 @@ fn run_container(
     cmd: &[String],
 ) -> Result<()> {
     let args = build_container_args(runtime, profile, extra_binds, cmd);
-    eprintln!(
-        "bf-sandbox: using {runtime} (image: {})",
-        container_image()
-    );
+    eprintln!("bf-sandbox: using {runtime} (image: {})", container_image());
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let status = Command::new(runtime).args(&refs).status()?;
     std::process::exit(status.code().unwrap_or(1));

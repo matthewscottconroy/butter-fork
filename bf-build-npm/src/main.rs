@@ -21,8 +21,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum BuildCommand {
-    Detect { repo: String },
-    Plan { repo: String },
+    Detect {
+        repo: String,
+    },
+    Plan {
+        repo: String,
+    },
     Run {
         repo: String,
         #[arg(long)]
@@ -105,7 +109,11 @@ fn artifacts_from_pkg(repo: &str, pkg: &serde_json::Value) -> Vec<Artifact> {
             // No bin field: look for node_modules/.bin entries that match package name
             let nm_bin = Path::new(repo).join("node_modules/.bin");
             if let Ok(entries) = std::fs::read_dir(&nm_bin) {
-                let pkg_name = pkg["name"].as_str().unwrap_or("").replace('@', "").replace('/', "-");
+                let pkg_name = pkg["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .replace('@', "")
+                    .replace('/', "-");
                 for entry in entries.flatten() {
                     let n = entry.file_name().to_string_lossy().to_string();
                     if n == pkg_name {
@@ -170,7 +178,11 @@ pub fn run() -> Result<()> {
             println!("{}", serde_json::to_string(&plan)?);
         }
 
-        BuildCommand::Run { repo, plan: _, release: _ } => {
+        BuildCommand::Run {
+            repo,
+            plan: _,
+            release: _,
+        } => {
             if !is_npm_repo(&repo) {
                 anyhow::bail!("no package.json in {repo}");
             }
@@ -215,10 +227,7 @@ pub fn run() -> Result<()> {
                 artifacts,
             };
             let manifest_path = Path::new(&repo).join("bf-artifact-manifest.json");
-            std::fs::write(
-                &manifest_path,
-                serde_json::to_string_pretty(&manifest)?,
-            )?;
+            std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
             emit(&Event::BuildComplete {
                 manifest_path: manifest_path.to_string_lossy().to_string(),
             });
@@ -244,7 +253,11 @@ mod tests {
     #[test]
     fn detects_npm_project() {
         let dir = tmp();
-        std::fs::write(dir.path().join("package.json"), r#"{"name":"foo","version":"1.0.0"}"#).unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"foo","version":"1.0.0"}"#,
+        )
+        .unwrap();
         assert!(is_npm_repo(dir.path().to_str().unwrap()));
     }
 

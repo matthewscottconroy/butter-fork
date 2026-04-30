@@ -139,10 +139,14 @@ pub fn run() -> Result<()> {
             delegate(
                 backend,
                 &[
-                    "issue", "open",
-                    "--repo", &args.repo,
-                    "--title", &args.title,
-                    "--body", &args.body,
+                    "issue",
+                    "open",
+                    "--repo",
+                    &args.repo,
+                    "--title",
+                    &args.title,
+                    "--body",
+                    &args.body,
                 ],
             )?;
         }
@@ -153,12 +157,18 @@ pub fn run() -> Result<()> {
                 delegate(
                     backend,
                     &[
-                        "pr", "open",
-                        "--repo", &args.repo,
-                        "--head", &args.head,
-                        "--base", &args.base,
-                        "--title", &args.title,
-                        "--body", &args.body,
+                        "pr",
+                        "open",
+                        "--repo",
+                        &args.repo,
+                        "--head",
+                        &args.head,
+                        "--base",
+                        &args.base,
+                        "--title",
+                        &args.title,
+                        "--body",
+                        &args.body,
                     ],
                 )?;
             }

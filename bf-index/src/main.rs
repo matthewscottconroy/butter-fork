@@ -99,8 +99,22 @@ fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) {
 fn is_source_file(name: &str) -> bool {
     matches!(
         name.rsplit('.').next().unwrap_or(""),
-        "rs" | "go" | "py" | "ts" | "tsx" | "js" | "jsx" | "c" | "cpp" | "h" | "hpp"
-            | "java" | "kt" | "swift" | "rb" | "cs" | "zig"
+        "rs" | "go"
+            | "py"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "c"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "java"
+            | "kt"
+            | "swift"
+            | "rb"
+            | "cs"
+            | "zig"
     )
 }
 
@@ -389,9 +403,7 @@ fn query_grep(repo: &str, pattern: &str) -> Result<()> {
             .args(["--line-number", "--no-heading", pattern, repo])
             .status()?
     } else {
-        Command::new("grep")
-            .args(["-rn", pattern, repo])
-            .status()?
+        Command::new("grep").args(["-rn", pattern, repo]).status()?
     };
     std::process::exit(status.code().unwrap_or(1));
 }
@@ -399,7 +411,10 @@ fn query_grep(repo: &str, pattern: &str) -> Result<()> {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        IndexCommand::Update { repo, no_embeddings } => update(&repo, no_embeddings)?,
+        IndexCommand::Update {
+            repo,
+            no_embeddings,
+        } => update(&repo, no_embeddings)?,
         IndexCommand::Query { repo, mode } => {
             if let Some(sym) = mode.symbol {
                 query_symbol(&repo, &sym)?;
@@ -413,6 +428,11 @@ pub fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -476,9 +496,4 @@ mod tests {
         assert!(!is_source_file("README.md"));
         assert!(!is_source_file("config.toml"));
     }
-}
-
-#[allow(dead_code)]
-fn main() -> Result<()> {
-    run()
 }

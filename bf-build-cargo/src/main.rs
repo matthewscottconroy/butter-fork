@@ -211,17 +211,12 @@ pub fn run() -> Result<()> {
             let bins = binary_targets(&repo).unwrap_or_else(|e| {
                 eprintln!("bf-build-cargo: cargo metadata warning: {e}");
                 // Fall back to directory name as the single binary.
-                vec![
-                    Path::new(&repo)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".to_owned()),
-                ]
+                vec![Path::new(&repo)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "unknown".to_owned())]
             });
-            eprintln!(
-                "bf-build-cargo: binary targets: {}",
-                bins.join(", ")
-            );
+            eprintln!("bf-build-cargo: binary targets: {}", bins.join(", "));
 
             let profile = if release { "release" } else { "debug" };
             emit(&Event::Plan {
@@ -288,10 +283,7 @@ pub fn run() -> Result<()> {
             };
 
             let manifest_path = format!("{repo}/target/bf-artifact-manifest.json");
-            std::fs::write(
-                &manifest_path,
-                serde_json::to_string_pretty(&manifest)?,
-            )?;
+            std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
             eprintln!("bf-build-cargo: manifest written → {manifest_path}");
 
             emit(&Event::BuildComplete {
@@ -302,6 +294,11 @@ pub fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -373,9 +370,4 @@ mod tests {
         let r = git_ref(&workspace);
         assert!(!r.is_empty());
     }
-}
-
-#[allow(dead_code)]
-fn main() -> Result<()> {
-    run()
 }

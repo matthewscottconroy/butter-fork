@@ -58,10 +58,8 @@ fn detect_returns_0_for_cargo_repo() {
         "detect should exit 0 for a Cargo project"
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let det: serde_json::Value = serde_json::from_str(
-        stdout.lines().next().unwrap_or("{}"),
-    )
-    .unwrap();
+    let det: serde_json::Value =
+        serde_json::from_str(stdout.lines().next().unwrap_or("{}")).unwrap();
     assert_eq!(det["adapter"].as_str(), Some("bf-build-cargo"));
     assert!(det["confidence"].as_f64().unwrap_or(0.0) > 0.9);
 }
@@ -86,7 +84,10 @@ fn plan_emits_build_plan_json() {
     let plan: serde_json::Value =
         serde_json::from_str(stdout.lines().next().unwrap_or("{}")).unwrap();
     assert_eq!(plan["adapter"].as_str(), Some("bf-build-cargo"));
-    assert!(plan["steps"].as_array().map(|s| !s.is_empty()).unwrap_or(false));
+    assert!(plan["steps"]
+        .as_array()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false));
 }
 
 #[test]
@@ -133,5 +134,8 @@ fn run_emits_build_complete_event() {
             .map(|v| v["type"].as_str() == Some("build-complete"))
             .unwrap_or(false)
     });
-    assert!(has_build_complete, "expected a build-complete NDJSON event on stdout");
+    assert!(
+        has_build_complete,
+        "expected a build-complete NDJSON event on stdout"
+    );
 }

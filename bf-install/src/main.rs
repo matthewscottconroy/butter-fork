@@ -115,9 +115,7 @@ pub fn previous_generation(project: &str) -> Result<PathBuf> {
     all.sort_by_key(|(n, _)| *n);
     match all.as_slice() {
         [.., prev, _current] => Ok(prev.1.clone()),
-        _ => anyhow::bail!(
-            "nothing to roll back for '{project}' — only one generation exists"
-        ),
+        _ => anyhow::bail!("nothing to roll back for '{project}' — only one generation exists"),
     }
 }
 
@@ -410,6 +408,11 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -471,7 +474,10 @@ mod tests {
         assert!(bins.contains(&"myprog".to_owned()));
 
         let link = bin_link("myprog");
-        assert!(link.exists() || link.is_symlink(), "bin symlink should exist");
+        assert!(
+            link.exists() || link.is_symlink(),
+            "bin symlink should exist"
+        );
     }
 
     #[test]
@@ -486,9 +492,4 @@ mod tests {
         let err = previous_generation("solo");
         assert!(err.is_err());
     }
-}
-
-#[allow(dead_code)]
-fn main() -> Result<()> {
-    run()
 }

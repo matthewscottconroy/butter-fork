@@ -135,7 +135,9 @@ fn builtin_catalog() -> Vec<CatalogEntry> {
 
 fn load_user_catalog() -> Vec<CatalogEntry> {
     let path = user_catalog_path();
-    let Ok(s) = std::fs::read_to_string(&path) else { return Vec::new() };
+    let Ok(s) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
     serde_json::from_str::<Vec<CatalogEntry>>(&s).unwrap_or_default()
 }
 
@@ -152,7 +154,9 @@ fn save_user_catalog(entries: &[CatalogEntry]) -> Result<()> {
 
 fn load_remote_index() -> Vec<CatalogEntry> {
     let path = remote_index_path();
-    let Ok(s) = std::fs::read_to_string(&path) else { return Vec::new() };
+    let Ok(s) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
     serde_json::from_str::<Vec<CatalogEntry>>(&s).unwrap_or_default()
 }
 
@@ -192,7 +196,11 @@ fn fetch_remote_index() -> Result<usize> {
         // `sha256sum --check <file>` expects format: `<hash>  <filename>`
         // Rewrite to match the local path.
         if let Ok(chk_content) = std::fs::read_to_string(&tmp_sha) {
-            let hash = chk_content.split_whitespace().next().unwrap_or("").to_owned();
+            let hash = chk_content
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_owned();
             let check_line = format!("{hash}  {}", dest.display());
             let check_file = format!("{}.check", dest.display());
             let _ = std::fs::write(&check_file, &check_line);
@@ -206,7 +214,9 @@ fn fetch_remote_index() -> Result<usize> {
             if !ok {
                 // Corrupt download — remove and bail.
                 let _ = std::fs::remove_file(&dest);
-                anyhow::bail!("catalog index checksum mismatch — refusing to use corrupted download");
+                anyhow::bail!(
+                    "catalog index checksum mismatch — refusing to use corrupted download"
+                );
             }
             eprintln!("bf-catalog: checksum verified");
         }
@@ -215,7 +225,10 @@ fn fetch_remote_index() -> Result<usize> {
     }
 
     let entries = load_remote_index();
-    eprintln!("bf-catalog: cached {} entries from remote index", entries.len());
+    eprintln!(
+        "bf-catalog: cached {} entries from remote index",
+        entries.len()
+    );
     Ok(entries.len())
 }
 
@@ -238,9 +251,13 @@ fn github_search(query: &str) -> Vec<CatalogEntry> {
     eprintln!("bf-catalog: querying GitHub Search for '{query}'");
     let out = std::process::Command::new("gh")
         .args([
-            "search", "repos", query,
-            "--limit", "10",
-            "--json", "name,description,url,license,stargazersCount,owner",
+            "search",
+            "repos",
+            query,
+            "--limit",
+            "10",
+            "--json",
+            "name,description,url,license,stargazersCount,owner",
         ])
         .output();
 
@@ -264,18 +281,20 @@ fn github_search(query: &str) -> Vec<CatalogEntry> {
             } else {
                 format!("{owner}/{name}")
             };
-            let spdx = v["license"]["spdxId"].as_str()
+            let spdx = v["license"]["spdxId"]
+                .as_str()
                 .filter(|s| *s != "NOASSERTION")
                 .map(str::to_owned);
-            let is_copyleft = spdx.as_deref()
-                .map(is_spdx_copyleft)
-                .unwrap_or(false);
+            let is_copyleft = spdx.as_deref().map(is_spdx_copyleft).unwrap_or(false);
             Some(CatalogEntry {
                 slug,
                 name,
                 description: v["description"].as_str().unwrap_or("").to_owned(),
                 upstream_url: url,
-                license: v["license"]["name"].as_str().unwrap_or("Unknown").to_owned(),
+                license: v["license"]["name"]
+                    .as_str()
+                    .unwrap_or("Unknown")
+                    .to_owned(),
                 stars: v["stargazersCount"].as_u64().unwrap_or(0),
                 has_contributing: false, // unknown at search time
                 has_code_of_conduct: false,
@@ -295,18 +314,29 @@ fn contribution_score(e: &CatalogEntry) -> f64 {
     let mut score = 0.0_f64;
 
     // CONTRIBUTING.md presence is the strongest signal.
-    if e.has_contributing { score += 0.35; }
+    if e.has_contributing {
+        score += 0.35;
+    }
     // Code of conduct indicates a welcoming community.
-    if e.has_code_of_conduct { score += 0.15; }
+    if e.has_code_of_conduct {
+        score += 0.15;
+    }
     // Fast PR response latency is a strong positive signal.
     if let Some(days) = e.pr_response_latency_days {
-        score += if days <= 3.0 { 0.30 }
-                 else if days <= 7.0 { 0.20 }
-                 else if days <= 14.0 { 0.10 }
-                 else { 0.0 };
+        score += if days <= 3.0 {
+            0.30
+        } else if days <= 7.0 {
+            0.20
+        } else if days <= 14.0 {
+            0.10
+        } else {
+            0.0
+        };
     }
     // Copyleft discourages casual contribution due to relicensing complexity.
-    if e.is_copyleft { score -= 0.10; }
+    if e.is_copyleft {
+        score -= 0.10;
+    }
     // Star count as a rough community-size proxy.
     score += (e.stars as f64 / 100_000.0).min(0.20);
 
@@ -317,8 +347,12 @@ fn contribution_score(e: &CatalogEntry) -> f64 {
 
 fn is_spdx_copyleft(spdx: &str) -> bool {
     let s = spdx.to_uppercase();
-    s.contains("GPL") || s.contains("AGPL") || s.contains("LGPL")
-        || s.contains("EUPL") || s.contains("OSL") || s.contains("MPL")
+    s.contains("GPL")
+        || s.contains("AGPL")
+        || s.contains("LGPL")
+        || s.contains("EUPL")
+        || s.contains("OSL")
+        || s.contains("MPL")
 }
 
 // ── URL → slug inference ──────────────────────────────────────────────────────
@@ -399,7 +433,9 @@ pub fn run() -> Result<()> {
             }
 
             if matches.is_empty() {
-                emit(&Event::Message { text: format!("No results for: {query}") });
+                emit(&Event::Message {
+                    text: format!("No results for: {query}"),
+                });
             } else {
                 for mut entry in matches {
                     // Fill in score if missing.
@@ -424,7 +460,9 @@ pub fn run() -> Result<()> {
                 }
                 None => {
                     eprintln!("bf-catalog: '{slug}' not found in catalog");
-                    eprintln!("bf-catalog: try `bf-catalog search {slug}` or `bf-catalog add <url>`");
+                    eprintln!(
+                        "bf-catalog: try `bf-catalog search {slug}` or `bf-catalog add <url>`"
+                    );
                     std::process::exit(bf_common::exit::NOINPUT);
                 }
             }
@@ -465,31 +503,31 @@ pub fn run() -> Result<()> {
             emit(&Event::Done { exit_code: 0 });
         }
 
-        Command::Score { slug } => {
-            match find_entry(&slug) {
-                Some(entry) => {
-                    let score = entry.contribution_score.unwrap_or_else(|| contribution_score(&entry));
-                    let breakdown = serde_json::json!({
-                        "slug": entry.slug,
-                        "contribution_score": score,
-                        "signals": {
-                            "has_contributing": entry.has_contributing,
-                            "has_code_of_conduct": entry.has_code_of_conduct,
-                            "pr_response_latency_days": entry.pr_response_latency_days,
-                            "is_copyleft": entry.is_copyleft,
-                            "stars": entry.stars,
-                            "spdx_id": entry.spdx_id,
-                        }
-                    });
-                    println!("{}", serde_json::to_string_pretty(&breakdown)?);
-                    emit(&Event::Done { exit_code: 0 });
-                }
-                None => {
-                    eprintln!("bf-catalog: '{slug}' not found");
-                    std::process::exit(bf_common::exit::NOINPUT);
-                }
+        Command::Score { slug } => match find_entry(&slug) {
+            Some(entry) => {
+                let score = entry
+                    .contribution_score
+                    .unwrap_or_else(|| contribution_score(&entry));
+                let breakdown = serde_json::json!({
+                    "slug": entry.slug,
+                    "contribution_score": score,
+                    "signals": {
+                        "has_contributing": entry.has_contributing,
+                        "has_code_of_conduct": entry.has_code_of_conduct,
+                        "pr_response_latency_days": entry.pr_response_latency_days,
+                        "is_copyleft": entry.is_copyleft,
+                        "stars": entry.stars,
+                        "spdx_id": entry.spdx_id,
+                    }
+                });
+                println!("{}", serde_json::to_string_pretty(&breakdown)?);
+                emit(&Event::Done { exit_code: 0 });
             }
-        }
+            None => {
+                eprintln!("bf-catalog: '{slug}' not found");
+                std::process::exit(bf_common::exit::NOINPUT);
+            }
+        },
     }
 
     Ok(())

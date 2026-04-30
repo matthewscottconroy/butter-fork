@@ -25,7 +25,11 @@ struct Cli {
     tools: String,
     #[arg(long, default_value = "50")]
     max_iterations: u32,
-    #[arg(long, default_value = "claude-opus-4-7-20251101", env = "BF_AGENT_MODEL")]
+    #[arg(
+        long,
+        default_value = "claude-opus-4-7-20251101",
+        env = "BF_AGENT_MODEL"
+    )]
     model: String,
 }
 
@@ -46,8 +50,8 @@ pub struct ToolManifest {
 }
 
 fn load_manifest(path: &str) -> Result<ToolManifest> {
-    let s = std::fs::read_to_string(path)
-        .with_context(|| format!("reading tool manifest: {path}"))?;
+    let s =
+        std::fs::read_to_string(path).with_context(|| format!("reading tool manifest: {path}"))?;
     serde_json::from_str(&s).context("parsing tool manifest JSON")
 }
 
@@ -113,8 +117,7 @@ fn run_tool(name: &str, input: &Value, repo: &str, specs: &[ToolSpec]) -> Result
         "read_file" => {
             let path = input["path"].as_str().context("path required")?;
             let full = repo_path.join(path);
-            std::fs::read_to_string(&full)
-                .with_context(|| format!("reading {}", full.display()))
+            std::fs::read_to_string(&full).with_context(|| format!("reading {}", full.display()))
         }
 
         "write_file" => {
@@ -314,10 +317,7 @@ fn run_agent_loop(
             total_out += u["output_tokens"].as_u64().unwrap_or(0);
         }
 
-        let content = response["content"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
+        let content = response["content"].as_array().cloned().unwrap_or_default();
         let stop_reason = response["stop_reason"].as_str().unwrap_or("");
 
         // Collect tool_use blocks; emit text messages
@@ -345,9 +345,7 @@ fn run_agent_loop(
         messages.push(json!({"role": "assistant", "content": content}));
 
         if tool_calls.is_empty() || stop_reason == "end_turn" {
-            eprintln!(
-                "bf-agent: done ({stop_reason}) — {total_in} in / {total_out} out tokens"
-            );
+            eprintln!("bf-agent: done ({stop_reason}) — {total_in} in / {total_out} out tokens");
             emit(&Event::Done { exit_code: 0 });
             return Ok(());
         }
@@ -394,9 +392,7 @@ pub fn run() -> Result<()> {
 
     let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_else(|_| {
         // Try keyring in a future phase; for now exit with a clear message.
-        eprintln!(
-            "bf-agent: ANTHROPIC_API_KEY not set — export it or configure the OS keychain"
-        );
+        eprintln!("bf-agent: ANTHROPIC_API_KEY not set — export it or configure the OS keychain");
         std::process::exit(exit::CONFIG);
     });
 
@@ -421,6 +417,11 @@ pub fn run() -> Result<()> {
         &manifest.tools,
         cli.max_iterations,
     )
+}
+
+#[allow(dead_code)]
+fn main() -> Result<()> {
+    run()
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -492,9 +493,4 @@ mod tests {
         let (_out, is_err) = execute_tool("run_shell", &input, repo, &[]);
         assert!(is_err);
     }
-}
-
-#[allow(dead_code)]
-fn main() -> Result<()> {
-    run()
 }

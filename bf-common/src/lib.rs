@@ -156,11 +156,28 @@ pub struct TelemetryRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TelemetryEvent {
-    Install { slug: String, success: bool, duration_secs: u64 },
-    Build { slug: String, adapter: String, success: bool, duration_secs: u64 },
-    AgentRun { slug: String, success: bool, iterations: u32 },
-    PrOpened { slug: String },
-    PrMerged { slug: String },
+    Install {
+        slug: String,
+        success: bool,
+        duration_secs: u64,
+    },
+    Build {
+        slug: String,
+        adapter: String,
+        success: bool,
+        duration_secs: u64,
+    },
+    AgentRun {
+        slug: String,
+        success: bool,
+        iterations: u32,
+    },
+    PrOpened {
+        slug: String,
+    },
+    PrMerged {
+        slug: String,
+    },
 }
 
 /// Result of `bf-build detect`: which adapter should build this repo.
