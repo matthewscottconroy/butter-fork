@@ -25,6 +25,7 @@ fn main() -> anyhow::Result<()> {
         "bf-build-meson" => bf_build_meson::run(),
         "bf-build-npm" => bf_build_npm::run(),
         "bf-catalog" => bf_catalog::run(),
+        "bf-daemon" => bf_daemon::run(),
         "bf-forge" => bf_forge::run(),
         "bf-forge-github" => bf_forge_github::run(),
         "bf-forge-gitlab" => bf_forge_gitlab::run(),
@@ -47,10 +48,19 @@ fn main() -> anyhow::Result<()> {
         }
         other => {
             eprintln!("bf-fat: unknown component '{other}'");
-            eprintln!("Run bf-fat directly to see available components.");
+            eprintln!("Available components:");
+            for comp in COMPONENTS {
+                eprintln!("  {comp}");
+            }
             std::process::exit(64);
         }
     }
+}
+
+/// Returns true if `name` is a known component that can be dispatched.
+#[cfg(test)]
+fn is_known_component(name: &str) -> bool {
+    COMPONENTS.contains(&name)
 }
 
 const COMPONENTS: &[&str] = &[
@@ -64,6 +74,7 @@ const COMPONENTS: &[&str] = &[
     "bf-build-meson",
     "bf-build-npm",
     "bf-catalog",
+    "bf-daemon",
     "bf-forge",
     "bf-forge-github",
     "bf-forge-gitlab",
@@ -72,3 +83,64 @@ const COMPONENTS: &[&str] = &[
     "bf-sandbox",
     "bf-scaffold",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The MATCH_ARMS list must be kept in sync with the match in main().
+    // If a component is added to COMPONENTS but not to the match (or vice versa),
+    // this test will catch it by verifying every COMPONENT is "known".
+    const MATCH_ARMS: &[&str] = &[
+        "bf",
+        "bf-agent",
+        "bf-agent-ollama",
+        "bf-bootstrap",
+        "bf-build",
+        "bf-build-cargo",
+        "bf-build-cmake",
+        "bf-build-meson",
+        "bf-build-npm",
+        "bf-catalog",
+        "bf-daemon",
+        "bf-forge",
+        "bf-forge-github",
+        "bf-forge-gitlab",
+        "bf-index",
+        "bf-install",
+        "bf-sandbox",
+        "bf-scaffold",
+    ];
+
+    #[test]
+    fn components_list_matches_dispatch_arms() {
+        // Every entry in COMPONENTS must appear in MATCH_ARMS.
+        for comp in COMPONENTS {
+            assert!(
+                MATCH_ARMS.contains(comp),
+                "COMPONENTS has '{comp}' but it is missing from the dispatch match"
+            );
+        }
+        // Every entry in MATCH_ARMS must appear in COMPONENTS.
+        for arm in MATCH_ARMS {
+            assert!(
+                COMPONENTS.contains(arm),
+                "dispatch match has '{arm}' but it is missing from COMPONENTS"
+            );
+        }
+    }
+
+    #[test]
+    fn is_known_component_returns_true_for_all_components() {
+        for comp in COMPONENTS {
+            assert!(is_known_component(comp), "'{comp}' should be known");
+        }
+    }
+
+    #[test]
+    fn is_known_component_returns_false_for_unknown() {
+        assert!(!is_known_component("bf-unknown"));
+        assert!(!is_known_component(""));
+        assert!(!is_known_component("bf-fat")); // bf-fat itself is not in COMPONENTS
+    }
+}

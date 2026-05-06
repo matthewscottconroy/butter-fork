@@ -350,6 +350,34 @@ PRs, resumes interrupted builds, pipes review comments back into `bf-agent`. Rea
 writes the same SQLite DB as the CLI tools — it has no privileged capability. Entirely
 optional; Butterfork without a daemon is still Butterfork.
 
+**IPC:** Unix-domain socket at `$XDG_RUNTIME_DIR/butterfork.sock`  
+**Log:** `~/.butterfork/logs/daemon.log`  
+**PID file:** `~/.butterfork/daemon.pid`
+
+```sh
+# Start the daemon in the background
+bf-daemon start
+
+# Start attached (useful for debugging)
+bf-daemon start --foreground
+
+# Show status and active task list
+bf-daemon status
+
+# Watch a pull request for CI/merge state changes
+bf-daemon watch-pr https://github.com/owner/repo/pull/42 --slug ripgrep
+
+# Tail the daemon log
+bf-daemon log --follow
+
+# Stop gracefully
+bf-daemon stop
+```
+
+`bf-forge-github pr watch` and `bf-forge-gitlab mr watch` automatically delegate to
+`bf-daemon watch-pr` when the daemon is running. If no daemon is found, they fall back
+to an in-process polling loop with a 4-hour timeout.
+
 ### `bf-bootstrap` — one-shot installer
 
 Runs the fork → clone → build → install flow against the canonical `butterfork` repo. Only
@@ -648,17 +676,48 @@ bf help-all            # walks PATH, finds every bf-* binary, prints its --help
 
 ## 11. Environment variables
 
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `BF_HOME` | `~/.butterfork` | Override the Butterfork state directory |
-| `BF_NO_FORK` | unset | Set to `1` to skip the fork step in `bf install` |
-| `BF_FORGE` | `bf-forge` | Override the forge component binary |
-| `BF_BUILD` | `bf-build` | Override the build component binary |
-| `BF_SANDBOX` | `bf-sandbox` | Override the sandbox component binary |
-| `BF_AGENT` | `bf-agent` | Override the agent component binary |
-| `BF_AGENT_MODEL` | `claude-opus-4-7-20251101` | Claude model used by `bf-agent` |
-| `ANTHROPIC_API_KEY` | — | Required by the default Claude agent backend |
-| `BF_TELEMETRY` | unset | Set to `1` to enable telemetry without creating the sentinel file |
+Every component reads only the variables relevant to it. All are optional unless noted.
+
+### Core / path overrides
+
+| Variable | Default | Read by | Effect |
+|----------|---------|---------|--------|
+| `BF_HOME` | `~/.butterfork` | all | Override the Butterfork state directory |
+| `BF_FORGE` | _(auto)_ | `bf-forge` | Force a specific forge backend binary (e.g. `bf-forge-github`) |
+| `BF_BUILD` | _(auto)_ | `bf-build` | Force a specific build adapter binary (e.g. `bf-build-cargo`) |
+| `BF_SANDBOX` | _(auto)_ | `bf-sandbox` | Set to `none` to disable sandboxing entirely |
+| `BF_AGENT` | `bf-agent` | `bf` | Override the agent component binary |
+
+### Fork / forge
+
+| Variable | Default | Read by | Effect |
+|----------|---------|---------|--------|
+| `BF_NO_FORK` | unset | `bf-forge-github`, `bf-forge-gitlab`, `bf-bootstrap` | Set to `1` to skip forking (clone upstream directly) |
+| `BF_GITHUB_USER` | _(from `gh api user`)_ | `bf-forge-github` | Override authenticated GitHub username; skips API round-trip |
+| `BF_GITLAB_USER` | _(from `glab api user`)_ | `bf-forge-gitlab` | Override authenticated GitLab username; skips API round-trip |
+| `BF_NO_AI_FOOTER` | unset | `bf-forge-github` | Set to `1` to suppress the AI-assistance footer on all PRs |
+
+### Sandbox
+
+| Variable | Default | Read by | Effect |
+|----------|---------|---------|--------|
+| `BF_SANDBOX_IMAGE` | `debian:bookworm-slim` | `bf-sandbox` | Container image used by Podman/Docker backends |
+| `BF_SANDBOX` | _(auto-detect)_ | `bf-sandbox` | Set to `none` to force unsandboxed execution |
+
+### Agent / AI
+
+| Variable | Default | Read by | Effect |
+|----------|---------|---------|--------|
+| `ANTHROPIC_API_KEY` | — | `bf-agent` | **Required** for the Claude backend |
+| `BF_AGENT_MODEL` | `claude-opus-4-7-20251101` | `bf-agent` | Claude model ID to use |
+| `OLLAMA_HOST` | `http://localhost:11434` | `bf-agent-ollama` | Ollama server address |
+
+### Catalog
+
+| Variable | Default | Read by | Effect |
+|----------|---------|---------|--------|
+| `BF_CATALOG_INDEX_URL` | _(upstream release URL)_ | `bf-catalog` | Override the remote signed catalog index URL |
+| `BF_NO_GITHUB_SEARCH` | unset | `bf-catalog` | Set to `1` to skip live GitHub Search results |
 
 Every component binary also respects `--help` and `--version`.
 
@@ -668,9 +727,14 @@ Every component binary also respects `--help` and `--version`.
 
 ### PR policy
 
-Per-project PR policy lives in `~/.butterfork/pr-policy/<slug>.toml`. The defaults:
+Per-project PR policy lives in `~/.butterfork/pr-policy/<slug>.toml`. The file is **flat
+TOML** — no section headers. See [docs/pr-policy.md](docs/pr-policy.md) for the full
+reference.
+
+Quick example:
 
 ```toml
+# ~/.butterfork/pr-policy/ripgrep.toml
 require_dco = true
 require_tests = true
 require_format_check = false

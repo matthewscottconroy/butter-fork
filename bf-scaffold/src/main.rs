@@ -288,11 +288,21 @@ fn copy_template_dir(src: &Path, dest: &Path, project_name: &str, description: &
         if src_path.is_dir() {
             copy_template_dir(&src_path, &dst_path, project_name, description)?;
         } else {
-            let content = std::fs::read_to_string(&src_path).unwrap_or_default();
-            let rendered = content
-                .replace("{{project_name}}", project_name)
-                .replace("{{description}}", description);
-            std::fs::write(&dst_path, rendered)?;
+            // Try text substitution; fall back to a binary-safe byte copy if the
+            // file is not valid UTF-8 (images, compiled shaders, fonts, etc.).
+            match std::fs::read_to_string(&src_path) {
+                Ok(content) => {
+                    let rendered = content
+                        .replace("{{project_name}}", project_name)
+                        .replace("{{description}}", description);
+                    std::fs::write(&dst_path, rendered)?;
+                }
+                Err(_) => {
+                    std::fs::copy(&src_path, &dst_path).with_context(|| {
+                        format!("copying binary template file {}", src_path.display())
+                    })?;
+                }
+            }
         }
     }
     Ok(())
@@ -339,6 +349,114 @@ fn scaffold_design_doc(path: &str, description: &str, spec: Option<&str>) -> Res
 
     write_common_files(root, &project_name, description)?;
     Ok(())
+}
+
+fn scaffold_poc(path: &str, description: &str, language: &str) -> Result<()> {
+    let root = Path::new(path);
+    std::fs::create_dir_all(root.join("src"))?;
+    std::fs::create_dir_all(root.join("tests"))?;
+
+    let project_name = root
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "new-project".to_owned());
+
+    match language {
+        "rust" => {
+            let cargo_toml = format!(
+                "[package]\n\
+                 name = \"{project_name}\"\n\
+                 version = \"0.1.0\"\n\
+                 edition = \"2021\"\n\
+                 license = \"Apache-2.0 OR MIT\"\n\n\
+                 [dependencies]\n\
+                 # TODO: add the upstream crate you are experimenting with here, e.g.:\n\
+                 # ripgrep = {{ version = \"14\" }}\n\
+                 anyhow = \"1\"\n\n\
+                 [dev-dependencies]\n\
+                 anyhow = \"1\"\n"
+            );
+            std::fs::write(root.join("Cargo.toml"), cargo_toml)?;
+
+            // src/lib.rs — the core POC logic to iterate on
+            let lib_rs = format!(
+                "//! {description}\n\
+                 //!\n\
+                 //! POC skeleton — replace these stubs with real implementation.\n\n\
+                 use anyhow::Result;\n\n\
+                 /// TODO: define the primary type for this proof-of-concept.\n\
+                 pub struct {project_name_pascal} {{\n\
+                     // TODO: add fields\n\
+                 }}\n\n\
+                 impl {project_name_pascal} {{\n\
+                     /// TODO: implement core constructor.\n\
+                     pub fn new() -> Result<Self> {{\n\
+                         Ok(Self {{}})\n\
+                     }}\n\n\
+                     /// TODO: implement the core idea.\n\
+                     pub fn run(&self) -> Result<()> {{\n\
+                         todo!(\"implement core idea: {description}\")\n\
+                     }}\n\
+                 }}\n\n\
+                 impl Default for {project_name_pascal} {{\n\
+                     fn default() -> Self {{\n\
+                         Self::new().expect(\"construction must not fail\")\n\
+                     }}\n\
+                 }}\n",
+                project_name_pascal = to_pascal_case(&project_name)
+            );
+            std::fs::write(root.join("src/lib.rs"), lib_rs)?;
+
+            // src/main.rs — thin CLI wrapper
+            let main_rs = format!(
+                "use anyhow::Result;\n\
+                 use {crate_name}::{pascal};\n\n\
+                 fn main() -> Result<()> {{\n\
+                     let poc = {pascal}::new()?;\n\
+                     poc.run()\n\
+                 }}\n",
+                crate_name = project_name.replace('-', "_"),
+                pascal = to_pascal_case(&project_name)
+            );
+            std::fs::write(root.join("src/main.rs"), main_rs)?;
+
+            // tests/poc_test.rs — integration test stub
+            let test_rs = format!(
+                "use {crate_name}::{pascal};\n\n\
+                 #[test]\n\
+                 fn poc_constructs() {{\n\
+                     // Verify the POC type can be created without panicking.\n\
+                     let _ = {pascal}::new().expect(\"POC construction must succeed\");\n\
+                 }}\n\n\
+                 // TODO: add meaningful integration tests here.\n",
+                crate_name = project_name.replace('-', "_"),
+                pascal = to_pascal_case(&project_name)
+            );
+            std::fs::write(root.join("tests/poc_test.rs"), test_rs)?;
+        }
+        lang => {
+            eprintln!("bf-scaffold: language '{lang}' not yet supported; creating Rust skeleton");
+            return scaffold_poc(path, description, "rust");
+        }
+    }
+
+    write_common_files(root, &project_name, description)?;
+    write_ci_workflow(root)?;
+    Ok(())
+}
+
+/// Convert a kebab-case or snake_case name to PascalCase.
+fn to_pascal_case(name: &str) -> String {
+    name.split(['-', '_'])
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let mut c = s.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect()
 }
 
 fn scaffold_hello_world(path: &str, description: &str, language: &str) -> Result<()> {
@@ -451,16 +569,11 @@ pub fn run() -> Result<()> {
                         scaffold_hello_world(&path, &description, &language)?;
                     }
                     ScaffoldMode::Poc => {
-                        scaffold_hello_world(&path, &description, &language)?;
-                        eprintln!("bf-scaffold: POC mode: review src/main.rs for TODO markers");
-                        let main_path = Path::new(&path).join("src/main.rs");
-                        let existing = std::fs::read_to_string(&main_path)?;
-                        let with_todos = format!(
-                            "// TODO: implement core idea — {description}\n\
-                             // TODO: add error handling\n\
-                             // TODO: add tests\n\n{existing}"
+                        scaffold_poc(&path, &description, &language)?;
+                        eprintln!(
+                            "bf-scaffold: POC mode: see src/lib.rs for the stub type and \
+                             tests/poc_test.rs for the starting test"
                         );
-                        std::fs::write(&main_path, with_todos)?;
                     }
                 }
             }

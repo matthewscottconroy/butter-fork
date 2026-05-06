@@ -223,6 +223,7 @@ dependencies = [
  "bf-build-meson",
  "bf-build-npm",
  "bf-catalog",
+ "bf-daemon",
  "bf-forge",
  "bf-forge-github",
  "bf-forge-gitlab",
@@ -251,6 +252,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "tempfile",
  "toml",
 ]
 
@@ -261,7 +263,9 @@ dependencies = [
  "anyhow",
  "bf-common",
  "clap",
+ "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

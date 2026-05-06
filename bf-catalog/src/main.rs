@@ -537,3 +537,102 @@ pub fn run() -> Result<()> {
 fn main() -> Result<()> {
     run()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_catalog_is_non_empty() {
+        assert!(!builtin_catalog().is_empty());
+    }
+
+    #[test]
+    fn builtin_catalog_entries_have_non_empty_slugs_and_urls() {
+        for entry in builtin_catalog() {
+            assert!(!entry.slug.is_empty(), "slug must not be empty");
+            assert!(
+                entry.upstream_url.starts_with("https://"),
+                "upstream_url '{}' must be https",
+                entry.upstream_url
+            );
+        }
+    }
+
+    #[test]
+    fn contribution_score_is_in_range() {
+        for entry in builtin_catalog() {
+            let score = contribution_score(&entry);
+            assert!(
+                (0.0..=1.0).contains(&score),
+                "score {score} for '{}' out of [0.0, 1.0]",
+                entry.slug
+            );
+        }
+    }
+
+    #[test]
+    fn contribution_score_permissive_higher_than_copyleft() {
+        let permissive = CatalogEntry {
+            slug: "perm".into(),
+            name: "perm".into(),
+            description: "".into(),
+            upstream_url: "https://example.com/perm".into(),
+            license: "MIT".into(),
+            stars: 1000,
+            has_contributing: true,
+            has_code_of_conduct: true,
+            pr_response_latency_days: Some(2.0),
+            contribution_score: None,
+            spdx_id: Some("MIT".into()),
+            is_copyleft: false,
+        };
+        let mut copyleft = permissive.clone();
+        copyleft.is_copyleft = true;
+        assert!(
+            contribution_score(&permissive) > contribution_score(&copyleft),
+            "permissive license should score higher than copyleft"
+        );
+    }
+
+    #[test]
+    fn is_spdx_copyleft_identifies_gpl() {
+        assert!(is_spdx_copyleft("GPL-3.0-only"));
+        assert!(is_spdx_copyleft("AGPL-3.0-or-later"));
+        assert!(is_spdx_copyleft("LGPL-2.1-or-later"));
+        assert!(is_spdx_copyleft("MPL-2.0"));
+    }
+
+    #[test]
+    fn is_spdx_copyleft_does_not_flag_permissive() {
+        assert!(!is_spdx_copyleft("MIT"));
+        assert!(!is_spdx_copyleft("Apache-2.0"));
+        assert!(!is_spdx_copyleft("BSD-2-Clause"));
+        assert!(!is_spdx_copyleft("Unlicense"));
+    }
+
+    #[test]
+    fn entry_from_url_extracts_slug() {
+        let e = entry_from_url("https://github.com/BurntSushi/ripgrep");
+        assert_eq!(e.slug, "ripgrep");
+        assert_eq!(e.upstream_url, "https://github.com/BurntSushi/ripgrep");
+    }
+
+    #[test]
+    fn catalog_search_json_roundtrips() {
+        // Verify that builtin entries serialize to valid JSON that can be parsed back.
+        for entry in builtin_catalog() {
+            let json = serde_json::to_string(&entry).expect("serialize");
+            let back: CatalogEntry = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(back.slug, entry.slug);
+        }
+    }
+
+    #[test]
+    fn github_search_skipped_when_env_set() {
+        std::env::set_var("BF_NO_GITHUB_SEARCH", "1");
+        let results = github_search("ripgrep");
+        std::env::remove_var("BF_NO_GITHUB_SEARCH");
+        assert!(results.is_empty());
+    }
+}

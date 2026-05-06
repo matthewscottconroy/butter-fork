@@ -98,17 +98,26 @@ struct PrOpenArgs {
 }
 
 /// Select the backend binary for a given URL.
-fn backend_for(url: &str) -> &'static str {
+///
+/// Returns an error for URLs that don't match a known forge host, rather than
+/// silently falling back to a backend that will produce confusing errors.
+/// Override with BF_FORGE=<binary> to force a specific backend.
+fn backend_for(url: &str) -> Result<&'static str> {
     if let Ok(v) = std::env::var("BF_FORGE") {
         // SAFETY: the env var may outlive this function; leak is intentional for static lifetime.
-        return Box::leak(v.into_boxed_str());
+        return Ok(Box::leak(v.into_boxed_str()));
     }
     if url.contains("github.com") {
-        "bf-forge-github"
+        Ok("bf-forge-github")
     } else if url.contains("gitlab.com") {
-        "bf-forge-gitlab"
+        Ok("bf-forge-gitlab")
     } else {
-        "bf-forge-github" // default
+        anyhow::bail!(
+            "no forge backend found for URL '{}'\n\
+             Supported: github.com, gitlab.com\n\
+             Override with BF_FORGE=<backend-binary>",
+            url
+        )
     }
 }
 
@@ -123,19 +132,19 @@ pub fn run() -> Result<()> {
 
     match cli.command {
         ForgeCommand::Fork { upstream_url } => {
-            let backend = backend_for(&upstream_url);
+            let backend = backend_for(&upstream_url)?;
             delegate(backend, &["fork", &upstream_url])?;
         }
 
         ForgeCommand::Clone { fork_url, dest } => {
-            let backend = backend_for(&fork_url);
+            let backend = backend_for(&fork_url)?;
             delegate(backend, &["clone", &fork_url, &dest])?;
         }
 
         ForgeCommand::Issue {
             cmd: IssueCommand::Open(args),
         } => {
-            let backend = backend_for(&args.repo);
+            let backend = backend_for(&args.repo)?;
             delegate(
                 backend,
                 &[
@@ -153,7 +162,7 @@ pub fn run() -> Result<()> {
 
         ForgeCommand::Pr { cmd } => match cmd {
             PrCommand::Open(args) => {
-                let backend = backend_for(&args.repo);
+                let backend = backend_for(&args.repo)?;
                 delegate(
                     backend,
                     &[
@@ -173,11 +182,11 @@ pub fn run() -> Result<()> {
                 )?;
             }
             PrCommand::Status { url } => {
-                let backend = backend_for(&url);
+                let backend = backend_for(&url)?;
                 delegate(backend, &["pr", "status", &url])?;
             }
             PrCommand::Watch { url } => {
-                let backend = backend_for(&url);
+                let backend = backend_for(&url)?;
                 delegate(backend, &["pr", "watch", &url])?;
             }
         },

@@ -318,3 +318,108 @@ pub fn run() -> Result<()> {
 fn main() -> Result<()> {
     run()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_profile() -> ProfileConfig {
+        ProfileConfig {
+            unshare_net: Some(true),
+            ro_binds: Vec::new(),
+            rw_binds: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn bwrap_args_always_include_proc_and_dev() {
+        let args = build_bwrap_args(&default_profile(), &[]);
+        assert!(
+            args.windows(2).any(|w| w == ["--proc", "/proc"]),
+            "must bind /proc"
+        );
+        assert!(
+            args.windows(2).any(|w| w == ["--dev", "/dev"]),
+            "must bind /dev"
+        );
+    }
+
+    #[test]
+    fn bwrap_args_unshare_net_when_profile_says_so() {
+        let args = build_bwrap_args(&default_profile(), &[]);
+        assert!(args.iter().any(|a| a == "--unshare-net"));
+    }
+
+    #[test]
+    fn bwrap_args_no_unshare_net_for_agent_profile() {
+        let profile = ProfileConfig {
+            unshare_net: Some(false),
+            ro_binds: Vec::new(),
+            rw_binds: Vec::new(),
+        };
+        let args = build_bwrap_args(&profile, &[]);
+        assert!(!args.iter().any(|a| a == "--unshare-net"));
+    }
+
+    #[test]
+    fn bwrap_args_includes_ro_bind_from_profile() {
+        let profile = ProfileConfig {
+            unshare_net: Some(true),
+            ro_binds: vec!["/tmp".to_owned()],
+            rw_binds: Vec::new(),
+        };
+        let args = build_bwrap_args(&profile, &[]);
+        let has_ro = args
+            .windows(3)
+            .any(|w| w[0] == "--ro-bind" && w[1] == "/tmp" && w[2] == "/tmp");
+        assert!(has_ro, "expected --ro-bind /tmp /tmp in args: {args:?}");
+    }
+
+    #[test]
+    fn bwrap_args_includes_rw_bind_from_profile() {
+        let profile = ProfileConfig {
+            unshare_net: Some(true),
+            ro_binds: Vec::new(),
+            rw_binds: vec!["/tmp".to_owned()],
+        };
+        let args = build_bwrap_args(&profile, &[]);
+        let has_rw = args
+            .windows(3)
+            .any(|w| w[0] == "--bind" && w[1] == "/tmp" && w[2] == "/tmp");
+        assert!(has_rw, "expected --bind /tmp /tmp in args: {args:?}");
+    }
+
+    #[test]
+    fn bwrap_args_extra_bind_ro_suffix() {
+        let profile = default_profile();
+        let extra = ["/tmp:ro".to_owned()];
+        let args = build_bwrap_args(&profile, &extra);
+        let has_ro = args
+            .windows(3)
+            .any(|w| w[0] == "--ro-bind" && w[1] == "/tmp" && w[2] == "/tmp");
+        assert!(has_ro, "extra ro bind not found: {args:?}");
+    }
+
+    #[test]
+    fn bwrap_args_extra_bind_rw_suffix() {
+        let profile = default_profile();
+        let extra = ["/tmp:rw".to_owned()];
+        let args = build_bwrap_args(&profile, &extra);
+        let has_rw = args
+            .windows(3)
+            .any(|w| w[0] == "--bind" && w[1] == "/tmp" && w[2] == "/tmp");
+        assert!(has_rw, "extra rw bind not found: {args:?}");
+    }
+
+    #[test]
+    fn load_profile_build_defaults_to_unshare_net() {
+        let profile = load_profile("build");
+        assert_eq!(profile.unshare_net, Some(true));
+    }
+
+    #[test]
+    fn load_profile_agent_allows_net() {
+        let profile = load_profile("agent");
+        assert_eq!(profile.unshare_net, Some(false));
+    }
+}

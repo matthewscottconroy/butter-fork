@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
-use bf_common::{emit, Event};
+use bf_common::{emit, Event, PolicyConfig};
 use clap::{Args, Parser, Subcommand};
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Parser)]
@@ -125,6 +126,134 @@ fn gitlab_username() -> Result<String> {
     Ok(raw.trim_matches('"').to_owned())
 }
 
+// ── pre-flight helpers ────────────────────────────────────────────────────────
+
+fn bf_home() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"))
+}
+
+fn find_local_checkout(slug: &str) -> Option<String> {
+    let name = slug.rsplit('/').next()?;
+    let path = format!("{}/repos/{}", bf_home(), name);
+    Path::new(&path).exists().then_some(path)
+}
+
+fn load_policy(slug: &str) -> PolicyConfig {
+    let name = slug.rsplit('/').next().unwrap_or(slug);
+    let path = format!("{}/pr-policy/{}.toml", bf_home(), name);
+    if let Ok(s) = std::fs::read_to_string(&path) {
+        match toml::from_str::<PolicyConfig>(&s) {
+            Ok(cfg) => {
+                eprintln!("bf-forge-gitlab: loaded PR policy from {path}");
+                return cfg;
+            }
+            Err(e) => eprintln!("bf-forge-gitlab: warning: could not parse {path}: {e}"),
+        }
+    }
+    PolicyConfig::default()
+}
+
+fn detect_default_branch(local_path: &str) -> String {
+    let out = Command::new("git")
+        .args(["remote", "show", "origin"])
+        .current_dir(local_path)
+        .output();
+    if let Ok(o) = out {
+        let text = String::from_utf8_lossy(&o.stdout);
+        for line in text.lines() {
+            if let Some(rest) = line.trim().strip_prefix("HEAD branch:") {
+                let branch = rest.trim().to_owned();
+                if !branch.is_empty() && branch != "(unknown)" {
+                    return branch;
+                }
+            }
+        }
+    }
+    "main".to_owned()
+}
+
+fn parse_shortstat_total(output: &str) -> u64 {
+    output
+        .split_whitespace()
+        .filter_map(|w| w.parse::<u64>().ok())
+        .sum()
+}
+
+fn preflight_mr(slug: &str, head: &str) -> Result<()> {
+    eprintln!("bf-forge-gitlab: pre-flight checks for {slug}@{head}");
+    let local = find_local_checkout(slug);
+    let policy = load_policy(slug);
+    let mut warnings: Vec<String> = Vec::new();
+    let errors: Vec<String> = Vec::new();
+
+    let default_branch = local
+        .as_deref()
+        .map(detect_default_branch)
+        .unwrap_or_else(|| "main".to_owned());
+    let range = format!("origin/{default_branch}..HEAD");
+
+    // ── 1. DCO check ─────────────────────────────────────────────────────────
+    if policy.require_dco {
+        if let Some(ref local_path) = local {
+            let log = Command::new("git")
+                .args(["log", &range, "--format=%B---COMMIT---"])
+                .current_dir(local_path)
+                .output();
+            if let Ok(out) = log {
+                let text = String::from_utf8_lossy(&out.stdout);
+                let missing = text
+                    .split("---COMMIT---")
+                    .filter(|msg| {
+                        let m = msg.trim();
+                        !m.is_empty() && !m.contains("Signed-off-by:")
+                    })
+                    .count();
+                if missing > 0 {
+                    warnings.push(format!(
+                        "{missing} commit(s) missing DCO Signed-off-by — \
+                         amend with `git commit -s --amend`"
+                    ));
+                } else {
+                    eprintln!("bf-forge-gitlab: [ok] all commits have DCO Signed-off-by");
+                }
+            }
+        }
+    }
+
+    // ── 2. Diff size ─────────────────────────────────────────────────────────
+    if let Some(ref local_path) = local {
+        let stat = Command::new("git")
+            .args(["diff", &range, "--shortstat"])
+            .current_dir(local_path)
+            .output();
+        if let Ok(out) = stat {
+            let total = parse_shortstat_total(&String::from_utf8_lossy(&out.stdout));
+            if total > policy.max_diff_lines {
+                warnings.push(format!(
+                    "Large diff (~{total} changes, limit {}) — \
+                     consider splitting into smaller MRs",
+                    policy.max_diff_lines
+                ));
+            } else {
+                eprintln!("bf-forge-gitlab: [ok] diff size within limit ({total})");
+            }
+        }
+    }
+
+    // ── report ────────────────────────────────────────────────────────────────
+    for w in &warnings {
+        eprintln!("bf-forge-gitlab: [warn] {w}");
+    }
+    for e in &errors {
+        eprintln!("bf-forge-gitlab: [error] {e}");
+    }
+    if !errors.is_empty() {
+        anyhow::bail!("pre-flight failed ({} error(s))", errors.len());
+    }
+    Ok(())
+}
+
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
@@ -209,6 +338,7 @@ pub fn run() -> Result<()> {
             PrCommand::Open(args) => {
                 require_glab()?;
                 let slug = gitlab_slug(&args.repo).unwrap_or(args.repo.clone());
+                preflight_mr(&slug, &args.head)?;
                 eprintln!(
                     "bf-forge-gitlab: opening MR on {slug} ({} → {})",
                     args.head, args.base
@@ -250,8 +380,9 @@ pub fn run() -> Result<()> {
             PrCommand::Watch { url } => {
                 require_glab()?;
                 eprintln!("bf-forge-gitlab: watching {url}");
-                // Poll until merged/closed.
-                loop {
+                eprintln!("bf-forge-gitlab: will time out after 4 hours");
+                const MAX_POLLS: u32 = 480; // 480 * 30s = 4 hours
+                for poll in 0..MAX_POLLS {
                     let out = Command::new("glab")
                         .args(["mr", "view", &url, "--output", "json"])
                         .output();
@@ -274,8 +405,15 @@ pub fn run() -> Result<()> {
                             });
                         }
                     }
-                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    if poll + 1 < MAX_POLLS {
+                        std::thread::sleep(std::time::Duration::from_secs(30));
+                    }
                 }
+                eprintln!(
+                    "bf-forge-gitlab: watch timed out after 4 hours — \
+                     check MR status manually"
+                );
+                std::process::exit(bf_common::exit::TEMPFAIL);
             }
         },
     }

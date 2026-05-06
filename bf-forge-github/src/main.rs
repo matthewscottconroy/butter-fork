@@ -152,6 +152,13 @@ fn find_local_checkout(repo_slug: &str) -> Option<String> {
 
 /// Load per-project policy from `~/.butterfork/pr-policy/<slug>.toml`.
 /// Falls back to `PolicyConfig::default()` if the file is absent or malformed.
+///
+/// File format — flat TOML, all fields optional:
+/// ```toml
+/// require_dco = true
+/// max_diff_lines = 800
+/// ai_footer = "exclude"
+/// ```
 fn load_policy(repo_slug: &str) -> PolicyConfig {
     let home = std::env::var("HOME").unwrap_or_default();
     let bf_home = std::env::var("BF_HOME").unwrap_or_else(|_| format!("{home}/.butterfork"));
@@ -159,22 +166,38 @@ fn load_policy(repo_slug: &str) -> PolicyConfig {
     let name = repo_slug.rsplit('/').next().unwrap_or(repo_slug);
     let path = format!("{bf_home}/pr-policy/{name}.toml");
 
-    #[derive(serde::Deserialize, Default)]
-    struct PolicyFile {
-        #[serde(default)]
-        policy: PolicyConfig,
-    }
-
     if let Ok(s) = std::fs::read_to_string(&path) {
-        match toml::from_str::<PolicyFile>(&s) {
-            Ok(f) => {
+        match toml::from_str::<PolicyConfig>(&s) {
+            Ok(cfg) => {
                 eprintln!("bf-forge-github: loaded PR policy from {path}");
-                return f.policy;
+                return cfg;
             }
             Err(e) => eprintln!("bf-forge-github: warning: could not parse {path}: {e}"),
         }
     }
     PolicyConfig::default()
+}
+
+/// Detect the upstream default branch for a local checkout.
+/// Tries `git remote show origin`; falls back to "main".
+fn detect_default_branch(local_path: &str) -> String {
+    let out = Command::new("git")
+        .args(["remote", "show", "origin"])
+        .current_dir(local_path)
+        .output();
+    if let Ok(o) = out {
+        let text = String::from_utf8_lossy(&o.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("HEAD branch:") {
+                let branch = rest.trim().to_owned();
+                if !branch.is_empty() && branch != "(unknown)" {
+                    return branch;
+                }
+            }
+        }
+    }
+    "main".to_owned()
 }
 
 /// Detect SPDX license via GitHub API. Returns (spdx_id, is_copyleft).
@@ -216,6 +239,13 @@ fn preflight_pr(repo_slug: &str, head: &str) -> Result<()> {
     let mut warnings: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
+    // Detect upstream default branch once for use in git range checks.
+    let default_branch = local
+        .as_deref()
+        .map(detect_default_branch)
+        .unwrap_or_else(|| "main".to_owned());
+    let range = format!("origin/{default_branch}..HEAD");
+
     // ── 1. CONTRIBUTING.md in target repo ────────────────────────────────────
     let api_path = format!("repos/{repo_slug}/contents/CONTRIBUTING.md");
     match Command::new("gh").args(["api", &api_path]).output() {
@@ -247,7 +277,7 @@ fn preflight_pr(repo_slug: &str, head: &str) -> Result<()> {
     if policy.require_dco {
         if let Some(ref local_path) = local {
             let log = Command::new("git")
-                .args(["log", "origin/main..HEAD", "--format=%B---COMMIT---"])
+                .args(["log", &range, "--format=%B---COMMIT---"])
                 .current_dir(local_path)
                 .output();
             if let Ok(out) = log {
@@ -274,7 +304,7 @@ fn preflight_pr(repo_slug: &str, head: &str) -> Result<()> {
     // ── 4. Diff size + whitespace churn ──────────────────────────────────────
     if let Some(ref local_path) = local {
         let stat = Command::new("git")
-            .args(["diff", "origin/main..HEAD", "--shortstat"])
+            .args(["diff", &range, "--shortstat"])
             .current_dir(local_path)
             .output();
         if let Ok(out) = stat {
@@ -292,12 +322,7 @@ fn preflight_pr(repo_slug: &str, head: &str) -> Result<()> {
             // Whitespace churn: compare full diff vs ignore-whitespace diff.
             if policy.warn_whitespace_churn && total > 0 {
                 let ws_stat = Command::new("git")
-                    .args([
-                        "diff",
-                        "origin/main..HEAD",
-                        "--ignore-all-space",
-                        "--shortstat",
-                    ])
+                    .args(["diff", &range, "--ignore-all-space", "--shortstat"])
                     .current_dir(local_path)
                     .output();
                 if let Ok(ws_out) = ws_stat {
@@ -567,8 +592,10 @@ pub fn run() -> Result<()> {
                     Err(_) => {
                         // bf-daemon not installed — run a simple blocking poll loop.
                         eprintln!("bf-forge-github: bf-daemon not found, polling directly");
+                        eprintln!("bf-forge-github: will time out after 4 hours");
+                        const MAX_POLLS: u32 = 240; // 240 * 60s = 4 hours
                         let mut last_state = String::new();
-                        loop {
+                        for poll in 0..MAX_POLLS {
                             let out = std::process::Command::new("gh")
                                 .args(["pr", "view", &url, "--json", "state,title"])
                                 .output();
@@ -591,8 +618,15 @@ pub fn run() -> Result<()> {
                                     }
                                 }
                             }
-                            std::thread::sleep(std::time::Duration::from_secs(60));
+                            if poll + 1 < MAX_POLLS {
+                                std::thread::sleep(std::time::Duration::from_secs(60));
+                            }
                         }
+                        eprintln!(
+                            "bf-forge-github: watch timed out after 4 hours — \
+                             check PR status manually with `bf-forge pr status <url>`"
+                        );
+                        std::process::exit(bf_common::exit::TEMPFAIL);
                     }
                 }
             }
@@ -605,4 +639,88 @@ pub fn run() -> Result<()> {
 #[allow(dead_code)]
 fn main() -> Result<()> {
     run()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_shortstat_total_empty() {
+        assert_eq!(parse_shortstat_total(""), 0);
+    }
+
+    #[test]
+    fn parse_shortstat_total_typical() {
+        // git diff --shortstat output: "3 files changed, 42 insertions(+), 7 deletions(-)"
+        let s = " 3 files changed, 42 insertions(+), 7 deletions(-)";
+        assert_eq!(parse_shortstat_total(s), 3 + 42 + 7);
+    }
+
+    #[test]
+    fn parse_shortstat_total_only_additions() {
+        let s = " 1 file changed, 100 insertions(+)";
+        assert_eq!(parse_shortstat_total(s), 1 + 100);
+    }
+
+    #[test]
+    fn github_slug_https() {
+        assert_eq!(
+            github_slug("https://github.com/BurntSushi/ripgrep"),
+            Some("BurntSushi/ripgrep".to_owned())
+        );
+    }
+
+    #[test]
+    fn github_slug_https_git_suffix() {
+        assert_eq!(
+            github_slug("https://github.com/foo/bar.git"),
+            Some("foo/bar".to_owned())
+        );
+    }
+
+    #[test]
+    fn github_slug_not_github() {
+        assert_eq!(github_slug("https://gitlab.com/foo/bar"), None);
+    }
+
+    #[test]
+    fn repo_name_extracts_last_segment() {
+        assert_eq!(
+            repo_name("https://github.com/BurntSushi/ripgrep"),
+            "ripgrep"
+        );
+        assert_eq!(repo_name("https://github.com/foo/bar.git"), "bar");
+    }
+
+    #[test]
+    fn load_policy_returns_defaults_when_no_file() {
+        // Point BF_HOME at a temp dir that has no policy files.
+        let dir = std::env::temp_dir();
+        std::env::set_var("BF_HOME", dir.to_string_lossy().as_ref());
+        let policy = load_policy("some-nonexistent-project");
+        // Restore
+        std::env::remove_var("BF_HOME");
+
+        assert!(policy.require_dco);
+        assert!(policy.require_tests);
+        assert_eq!(policy.max_diff_lines, 1000);
+    }
+
+    #[test]
+    fn load_policy_reads_flat_toml() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let policy_dir = dir.path().join("pr-policy");
+        std::fs::create_dir_all(&policy_dir).unwrap();
+        let mut f = std::fs::File::create(policy_dir.join("myrepo.toml")).unwrap();
+        writeln!(f, "max_diff_lines = 250\nrequire_dco = false").unwrap();
+
+        std::env::set_var("BF_HOME", dir.path().to_string_lossy().as_ref());
+        let policy = load_policy("myrepo");
+        std::env::remove_var("BF_HOME");
+
+        assert_eq!(policy.max_diff_lines, 250);
+        assert!(!policy.require_dco);
+    }
 }

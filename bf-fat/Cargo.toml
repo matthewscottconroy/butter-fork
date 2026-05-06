@@ -29,4 +29,5 @@ bf-forge-gitlab = { path = "../bf-forge-gitlab" }
 bf-index = { path = "../bf-index" }
 bf-install = { path = "../bf-install" }
 bf-sandbox = { path = "../bf-sandbox" }
+bf-daemon = { path = "../bf-daemon" }
 bf-scaffold = { path = "../bf-scaffold" }

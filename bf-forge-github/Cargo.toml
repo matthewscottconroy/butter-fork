@@ -22,3 +22,6 @@ bf-common = { workspace = true }
 [lib]
 name = "bf_forge_github"
 path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

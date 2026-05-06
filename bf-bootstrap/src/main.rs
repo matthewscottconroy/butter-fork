@@ -82,6 +82,15 @@ pub fn run() -> Result<()> {
 
     eprintln!("bf-bootstrap: installing Butterfork into {prefix}");
 
+    // ── guard: refuse to overwrite an existing checkout ───────────────────────
+    if std::path::Path::new(&dest).exists() {
+        eprintln!("bf-bootstrap: destination already exists: {dest}");
+        eprintln!("bf-bootstrap: to reinstall, remove it first:");
+        eprintln!("bf-bootstrap:   rm -rf {dest}");
+        eprintln!("bf-bootstrap: to upgrade an existing install, use `bf update` instead");
+        anyhow::bail!("destination directory already exists: {dest}");
+    }
+
     // ── step 1: fork (or skip) ────────────────────────────────────────────────
     let clone_url = if cli.no_fork {
         eprintln!("bf-bootstrap: step 1/4 — skipping fork (--no-fork)");
